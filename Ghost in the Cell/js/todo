@@ -1,7 +1,5 @@
 Find a way to split this file into different files and pull them in for codingame
 
-add back in commander tests now that troops and factories exist
-
 Commander should validate commands
 
 commander should issue logical commands as well as actual ones

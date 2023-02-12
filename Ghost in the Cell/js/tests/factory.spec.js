@@ -73,35 +73,35 @@ describe('Factory', () => {
             expect(factory.getTroops()).toBe(troops);
         });
     });
-    describe('arrive', () => {
+    describe('receiveTroops', () => {
         it('adds troops if troops owner is factory owner', () => {
             const factory = new Factory(0, OWNER.ME, 5, 0);
             const troops = new Troops(0, OWNER.ME, 0, factory, 3, 0);
-            factory.arrive(troops);
+            factory.receiveTroops(troops);
             expect(factory.getTroops()).toBe(8);
         });
         it('subtracts troops if troops owner is not factory owner', () => {
             const factory = new Factory(0, OWNER.ENEMY, 5, 0);
             const troops = new Troops(0, OWNER.ME, 0, factory, 3, 0);
-            factory.arrive(troops);
+            factory.receiveTroops(troops);
             expect(factory.getTroops()).toBe(2);
         });
         it('switches owner if troops > factory troops and troops owner is not factory owner', () => {
             const factory = new Factory(0, OWNER.ME, 5, 0);
             const troops = new Troops(0, OWNER.ENEMY, 0, factory, 6, 0);
-            factory.arrive(troops);
+            factory.receiveTroops(troops);
             expect(factory.getOwner()).toBe(OWNER.ENEMY);
         });
         it('sets troops to abs(troops - factory troops) if troops > factory troops and troops owner is not factory owner', () => {
             const factory = new Factory(0, OWNER.ME, 5, 0);
             const troops = new Troops(0, OWNER.ENEMY, 0, factory, 6, 0);
-            factory.arrive(troops);
+            factory.receiveTroops(troops);
             expect(factory.getTroops()).toBe(1);
         });
         it('does not switch owner if troops = factory troops', () => {
             const factory = new Factory(0, OWNER.ME, 5, 0);
             const troops = new Troops(0, OWNER.ENEMY, 0, factory, 5, 0);
-            factory.arrive(troops);
+            factory.receiveTroops(troops);
             expect(factory.getOwner()).toBe(OWNER.ME);
         });
         it('throws error if factoryid != troops destination id', () => {
@@ -109,31 +109,59 @@ describe('Factory', () => {
             const wrongFactory = new Factory(1, OWNER.ME, 5, 0);
             const sourceFactory = new Factory(2, OWNER.ME, 5, 0);
             const troops = new Troops(0, OWNER.ENEMY, sourceFactory, wrongFactory, 5, 0);
-            expect(() => factory.arrive(troops)).toThrow();
+            expect(() => factory.receiveTroops(troops)).toThrow();
         });
     });
-    describe('increaseProduction', () => {
+    describe('sendTroops', () => {
+        it('throws error if factory owner is not me', () => {
+            const factory = new Factory(0, OWNER.ENEMY, 5, 0);
+            const destinationFactory = new Factory(1, OWNER.ME, 5, 0);
+            expect(() => factory.sendTroops(destinationFactory, 3, 5)).toThrow();
+        });
+        it('throws error if factory troops < troops', () => {
+            const factory = new Factory(0, OWNER.ME, 5, 0);
+            const destinationFactory = new Factory(1, OWNER.ME, 5, 0);
+            expect(() => factory.sendTroops(destinationFactory, 6, 5)).toThrow();
+        });
+        it('throws error if factory id = destination id', () => {
+            const factory = new Factory(0, OWNER.ME, 5, 0);
+            expect(() => factory.sendTroops(factory, 3)).toThrow();
+        });
+        it('subtracts troops from factory', () => {
+            const factory = new Factory(0, OWNER.ME, 5, 0);
+            const destinationFactory = new Factory(1, OWNER.ME, 5, 0);
+            factory.sendTroops(destinationFactory, 3, 5);
+            expect(factory.getTroops()).toBe(2);
+        });
+        it('returns troops object', () => {
+            const factory = new Factory(0, OWNER.ME, 5, 0);
+            const destinationFactory = new Factory(1, OWNER.ME, 5, 0);
+            const troops = factory.sendTroops(destinationFactory, 3, 5);
+            expect(troops).toBeInstanceOf(Troops);
+        });
+    });
+    describe('upgrade', () => {
         it('increases production by 1', () => {
             const factory = new Factory(0, OWNER.ME, 20, 1);
-            factory.increaseProduction();
+            factory.upgrade();
             expect(factory.getProduction()).toBe(2);
         });
         it('decreases troops by 10', () => {
             const factory = new Factory(0, OWNER.ME, 20, 1);
-            factory.increaseProduction();
+            factory.upgrade();
             expect(factory.getTroops()).toBe(10);
         });
         it('throws error if troops < 10', () => {
             const factory = new Factory(0, OWNER.ME, 9, 1);
-            expect(() => factory.increaseProduction()).toThrow();
+            expect(() => factory.upgrade()).toThrow();
         });
         it('throws error if production is 3', () => {
             const factory = new Factory(0, OWNER.ME, 0, 3);
-            expect(() => factory.increaseProduction()).toThrow();
+            expect(() => factory.upgrade()).toThrow();
         });
         it('throws error if owner is NEUTRAL', () => {
             const factory = new Factory(0, OWNER.NEUTRAL, 0, 2);
-            expect(() => factory.increaseProduction()).toThrow();
+            expect(() => factory.upgrade()).toThrow();
         });
     });
     describe('bomb', () => {

@@ -5,14 +5,31 @@ const OWNER = {
     NEUTRAL: 0
 };
 
-//todo:J the commander class should check whether the commands are valid before sending them
-//todo:J I think it should also issue the logical commands
+//todo:j instead of logging, it should add to a list of actions to be taken and then we can log at the end
 class Comander {
-    //static trySendTroops(source, destination, cyborgs) {
-
-    //mark a method as private by prefixing it with a #
-    static #sendTroops(source, destination, cyborgs) {
-        console.log('MOVE ' + source + ' ' + destination + ' ' + cyborgs);
+    static trySendTroops(source, destination, numTroops) {
+        //todo:J I'm pretty sure we are gonna get the distance from a static method in the game context class later.  for now lets just mock it
+        const distance = 1;
+        source.sendTroops(destination, numTroops, distance);
+        this.#sendTroops(source.getId(), destination.getId(), numTroops);
+    }
+    static tryUpgradeFactory(factory) {
+        factory.upgrade();
+        this.#upgradeFactory(factory.getId());
+    }
+    static trySendBomb(source, destination) {
+        //// todo:J I'm pretty sure we are gonna get the distance from a static method in the game context class later.  for now lets just mock it
+        // todo:J logically sending bombs isnt a thing yet, add here when ready
+        this.#sendBomb(source.getId(), destination.getId());
+    }
+    static tryWait() {
+        this.#wait();
+    }
+    static tryMessage(message) {
+        this.#message(message);
+    }
+    static #sendTroops(source, destination, numTroops) {
+        console.log('MOVE ' + source + ' ' + destination + ' ' + numTroops);
     }
     
     static #upgradeFactory(factoryId) {
@@ -93,7 +110,10 @@ class Troops {
     getTurnsRemaining() {
         return this.#turnsRemaining;
     }
-    decrementTurnsRemaining() {
+    update(){
+        this.#decrementTurnsRemaining();
+    }
+    #decrementTurnsRemaining() {
         if(this.#turnsRemaining <= 0){
             throw 'turns remaining is already less than or equal to 0';
         }
@@ -106,7 +126,7 @@ class Troops {
         return this.#traveling;
     }
     #arrive() {
-        this.#destination.arrive(this);
+        this.#destination.receiveTroops(this);
     }
 }
 
@@ -152,7 +172,7 @@ class Factory{
     getProduction() {
         return this.#production;
     }
-    increaseProduction() {
+    upgrade() {
         if(this.getOwner() == OWNER.NEUTRAL){
             throw 'cannot increase production of a neutral factory';
         }
@@ -184,7 +204,7 @@ class Factory{
             this.#produce();
         }
     }
-    arrive(troopsObject) {
+    receiveTroops(troopsObject) {
         if(troopsObject.getDestination().getId() != this.#id){
             throw 'cannot arrive at a factory that is not the destination';
         }
@@ -193,6 +213,19 @@ class Factory{
         } else {
             this.#attack(troopsObject);
         }
+    }
+    sendTroops(destination, number, turnsRemaining) {
+        if (this.#owner != OWNER.ME) {
+            throw 'cannot send troops from factory' + this.#id + ' because it is not owned by me';
+        }
+        if (this.#troops < number) {
+            throw 'cannot send' + number + ' troops from a factory with only ' + this.#troops + ' troops';
+        }
+        if(destination.getId() == this.#id){
+            throw 'cannot send troops to the same factory with id ' + this.#id;
+        }
+        this.#troops -= number;
+        return new Troops(-1, OWNER.ME, this, destination, number, turnsRemaining);
     }
     #reinforce(troopsObject) {
         if (troopsObject.getOwner() != this.#owner) {
@@ -225,9 +258,66 @@ class Factory{
     }
 }
 
+class Bomb {
+    #id;
+    #owner;
+    #source;
+    #destination;
+    #turnsRemaining;
+    constructor(source, destination) {
+        if(source.getOwner() != OWNER.ME){
+            throw 'cannot bomb from a factory' + source.getId() + ' that is not owned by me';
+        }
+        this.#id = -1;
+        this.#owner = OWNER.ME;
+        this.#source = source;
+        this.#destination = destination;
+        // this.#turnsRemaining = turnsRemaining;
+    }
+    getId() {
+        return this.#id;
+    }
+    getOwner() {
+        return this.#owner;
+    }
+    getSource() {
+        return this.#source;
+    }
+    getDestination() {
+        return this.#destination;
+    }
+    // getTurnsRemaining() {
+    //     return this.#turnsRemaining;
+    // }
+    // update() {
+    //     this.#decrementTurnsRemaining();
+    // }
+    // #decrementTurnsRemaining() {
+    //     if(this.#turnsRemaining <= 0){
+    //         throw 'turns remaining is already less than or equal to 0';
+    //     }
+    //     this.#turnsRemaining--;
+    //     if (this.#turnsRemaining == 0) {
+    //         this.#arrive();
+    //     }
+    // }
+    // #arrive() {
+    //     this.#destination.bomb();
+    // }
+}
+
 class GameContext {
+    //this will be a global data store, like a database or like vue state
     #factories;
     #links;
+    #troops;
+    #bombs;
+}
+
+class GameFacts{
+    static getMaxDistance(){
+        return 20;
+    }
 }
 
 //todo:J think about where this should live?  static factory function? static game context function?
@@ -317,4 +407,4 @@ function main() {
 }
 //this ain't great, but for now swap which of these two lines is commented out to run the tests or the game
 // main();
-module.exports = { OWNER, Comander, Troops, Factory, GameContext, main, getDistance, getClosestFactory };
+module.exports = { OWNER, Comander, Troops, Factory, Bomb, GameContext, GameFacts, main, getDistance, getClosestFactory };

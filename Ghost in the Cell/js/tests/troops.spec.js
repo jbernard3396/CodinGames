@@ -71,24 +71,24 @@ describe('Troops', () => {
             expect(troops.getCount()).toBe(5);
         });
     });
-    describe('decrementTurnsRemaining', () => {
+    describe('update', () => {
         it('decrements turnsRemaining', () => {
             const troops = new Troops(1, OWNER.ME, source,destination,0,5);
-            troops.decrementTurnsRemaining();
+            troops.update();
             expect(troops.getTurnsRemaining()).toBe(4);
         });
         it('throws error when turnsRemaining == 0', () => {
             const troops = new Troops(1, OWNER.ME, source,destination,0,0);
-            expect(() => troops.decrementTurnsRemaining()).toThrow();
+            expect(() => troops.update()).toThrow();
         });
         it('throws error when turnsRemaining < 0', () => {
             const troops = new Troops(1, OWNER.ME, source,destination,0,-1);
-            expect(() => troops.decrementTurnsRemaining()).toThrow();
+            expect(() => troops.update()).toThrow();
         });
         it('arrives at destination when turnsRemaining = 1 ', () => {
-            const spy = jest.spyOn(destination, 'arrive');
+            const spy = jest.spyOn(destination, 'receiveTroops');
             const troops = new Troops(1, OWNER.ME, source,destination,0,1);
-            troops.decrementTurnsRemaining();
+            troops.update();
             expect(spy).toHaveBeenCalled();
         });
     });
