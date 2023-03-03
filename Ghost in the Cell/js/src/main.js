@@ -307,7 +307,7 @@ class Bomb {
 }
 
 class GameContext {
-    //this will be a global data store, like a database or like vue state
+    //this will be an instantiated object that we will pass around like a crazy person
     #factories;
     #links;
     #troops;
