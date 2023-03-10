@@ -264,15 +264,25 @@ class Bomb {
     #source;
     #destination;
     #turnsRemaining;
-    constructor(source, destination) {
-        if(source.getOwner() != OWNER.ME){
-            throw 'cannot bomb from a factory' + source.getId() + ' that is not owned by me';
-        }
-        this.#id = -1;
-        this.#owner = OWNER.ME;
+    constructor(id, owner, source, destination, turnsRemaining) {
+        this.#id = id;
+        this.#owner = owner;
         this.#source = source;
         this.#destination = destination;
-        // this.#turnsRemaining = turnsRemaining;
+        this.#turnsRemaining = turnsRemaining;
+    }
+    static createFriendlyBomb(source, destination) {
+        if(source.getOwner() != OWNER.ME){
+            throw 'cannot bomb from a factory ' + source.getId() + ' that is not owned by me';
+        }
+        const distance = GameContext.getInstance().getLinkByTwoFactoryIds(source.getId(), destination.getId()).getDistance();
+        return new Bomb(-1, OWNER.ME, source, destination, distance);
+    }
+    static createEnemyBomb(id, source){
+        if(source.getOwner() != OWNER.ENEMY){
+            throw 'cannot bomb from a factory ' + source.getId() + ' that is not owned by the enemy';
+        }
+        return new Bomb(id, OWNER.ENEMY, source);
     }
     getId() {
         return this.#id;
@@ -286,9 +296,9 @@ class Bomb {
     getDestination() {
         return this.#destination;
     }
-    // getTurnsRemaining() {
-    //     return this.#turnsRemaining;
-    // }
+    getTurnsRemaining() {
+        return this.#turnsRemaining;
+    }
     // update() {
     //     this.#decrementTurnsRemaining();
     // }
@@ -306,12 +316,76 @@ class Bomb {
     // }
 }
 
+class Link {
+    #id;
+    #factory1;
+    #factory2;
+    #distance;
+    constructor(id, factory1, factory2, distance) {
+        this.#id = id;
+        this.#factory1 = factory1;
+        this.#factory2 = factory2;
+        this.#distance = distance;
+    }
+    getId() {
+        return this.#id;
+    }
+    getFactory1() {
+        return this.#factory1;
+    }
+    getFactory2() {
+        return this.#factory2;
+    }
+    getDistance() {
+        return this.#distance;
+    }
+}
+
 class GameContext {
-    //this will be an instantiated object that we will pass around like a crazy person
     #factories;
     #links;
     #troops;
     #bombs;
+    singleInstance = null;
+    static getInstance() {
+        if (this.singleInstance == null) {
+            this.singleInstance = new GameContext();
+        }
+        return this.singleInstance;
+    } 
+    constructor() {
+        this.#factories = [];
+        this.#links = [];
+        this.#troops = [];
+        this.#bombs = [];
+    }
+    getFactories() {
+        return this.#factories;
+    }
+    addFactory(factory) {
+        this.#factories.push(factory);
+    }
+    getLinks() {
+        return this.#links;
+    }
+    getLinkByTwoFactoryIds(factory1Id, factory2Id) {
+        return this.#links.find(link => (link.getFactory1().getId() == factory1Id && link.getFactory2().getId() == factory2Id) || (link.getFactory1().getId() == factory2Id && link.getFactory2().getId() == factory1Id));
+    }
+    addLink(link) {
+        this.#links.push(link);
+    }
+    getTroops() {
+        return this.#troops;
+    }
+    addTroop(troops) {
+        this.#troops.push(troops);
+    }
+    getBombs() {
+        return this.#bombs;
+    }
+    addBomb(bomb) {
+        this.#bombs.push(bomb);
+    }
 }
 
 class GameFacts{
@@ -407,4 +481,4 @@ function main() {
 }
 //this ain't great, but for now swap which of these two lines is commented out to run the tests or the game
 // main();
-module.exports = { OWNER, Comander, Troops, Factory, Bomb, GameContext, GameFacts, main, getDistance, getClosestFactory };
+module.exports = { OWNER, Comander, Troops, Factory, Link, Bomb, GameContext, GameFacts, main, getDistance, getClosestFactory };
