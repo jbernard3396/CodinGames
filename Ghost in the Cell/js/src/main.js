@@ -1,14 +1,11 @@
-//create enum for who owns the factory
 const OWNER = {
     ME: 1,
     ENEMY: -1,
     NEUTRAL: 0
 };
 
-//todo:j instead of logging, it should add to a list of actions to be taken and then we can log at the end
 class Comander {
     static trySendTroops(source, destination, numTroops) {
-        //todo:J I'm pretty sure we are gonna get the distance from a static method in the game context class later.  for now lets just mock it
         const distance = 1;
         source.sendTroops(destination, numTroops, distance);
         this.#sendTroops(source.getId(), destination.getId(), numTroops);
@@ -18,8 +15,6 @@ class Comander {
         this.#upgradeFactory(factory.getId());
     }
     static trySendBomb(source, destination) {
-        //// todo:J I'm pretty sure we are gonna get the distance from a static method in the game context class later.  for now lets just mock it
-        // todo:J logically sending bombs isnt a thing yet, add here when ready
         this.#sendBomb(source.getId(), destination.getId());
     }
     static tryWait() {
@@ -388,13 +383,12 @@ class GameContext {
     }
 }
 
-class GameFacts{
+class GameFacts{ 
     static getMaxDistance(){
         return 20;
     }
 }
 
-//todo:J think about where this should live?  static factory function? static game context function?
 function getDistance(factory1, factory2, links) {
     if (factory1 == factory2) {
         return 0;
@@ -406,7 +400,6 @@ function getDistance(factory1, factory2, links) {
     return 0;
 }
 
-//todo:J think about where this should live?  static factory function? static game context function?
 function getClosestFactory(myFactory, links) {
     let closestFactory = 0;
     let closestDistance = 999999;
