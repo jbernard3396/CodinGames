@@ -279,6 +279,23 @@ class Bomb {
         }
         return new Bomb(id, OWNER.ENEMY, source);
     }
+    validate(id, owner, source, destination, turnsRemaining) {
+        if(id != this.#id){
+            throw 'id: ' + id + ' is not ' + this.#id;
+        }
+        if(owner != this.#owner){
+            throw 'owner is not ' + owner;
+        }
+        if(source != this.#source){
+            throw 'source is not ' + source;
+        }
+        if(destination != this.#destination){
+            throw 'destination is not ' + destination;
+        }
+        if(turnsRemaining != this.#turnsRemaining){
+            throw 'turns remaining is not ' + turnsRemaining;
+        }
+    }
     getId() {
         return this.#id;
     }
@@ -294,21 +311,21 @@ class Bomb {
     getTurnsRemaining() {
         return this.#turnsRemaining;
     }
-    // update() {
-    //     this.#decrementTurnsRemaining();
-    // }
-    // #decrementTurnsRemaining() {
-    //     if(this.#turnsRemaining <= 0){
-    //         throw 'turns remaining is already less than or equal to 0';
-    //     }
-    //     this.#turnsRemaining--;
-    //     if (this.#turnsRemaining == 0) {
-    //         this.#arrive();
-    //     }
-    // }
-    // #arrive() {
-    //     this.#destination.bomb();
-    // }
+    update() {
+        this.#decrementTurnsRemaining();
+    }
+    #decrementTurnsRemaining() {
+        if(this.#turnsRemaining <= 0){
+            throw 'turns remaining is already less than or equal to 0';
+        }
+        this.#turnsRemaining--;
+        if (this.#turnsRemaining == 0) {
+            this.#arrive();
+        }
+    }
+    #arrive() {
+        this.#destination.bomb();
+    }
 }
 
 class Link {

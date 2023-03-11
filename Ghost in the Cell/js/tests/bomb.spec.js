@@ -53,4 +53,55 @@ describe('Bomb', () => {
             expect(() => Bomb.createEnemyBomb(1, source)).toThrow();
         });
     });
+    describe('update', () => {
+        it('decrements turns remaining', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            bomb.update();
+            expect(bomb.getTurnsRemaining()).toBe(3);
+        });
+        it('throws error when turnsRemaining <= 0', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            bomb.update(); 
+            bomb.update(); 
+            bomb.update(); 
+            bomb.update(); 
+            expect(() => bomb.update()).toThrow();
+        });
+        it('bombs the destination when turnsRemaining == 1', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            const spy = jest.spyOn(destination, 'bomb');
+            bomb.update();
+            bomb.update();
+            bomb.update();
+            bomb.update();
+            expect(spy).toHaveBeenCalled();
+        });
+    });
+    describe('validate', () => {
+        it('throws error when passed in id != this.id', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(2, OWNER.ME, source, destination, 4)).toThrow();
+        });
+        it('throws error when passed in owner != this.owner', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(-1, OWNER.ENEMY, source, destination, 4)).toThrow();
+        });
+        it('throws error when passed in source != this.source', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(-1, OWNER.ME, enemySource, destination, 4)).toThrow();
+        });
+        it('throws error when passed in destination != this.destination', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(-1, OWNER.ME, source, enemySource, 4)).toThrow();
+        });
+        it('throws error when passed in turnsRemaining != this.turnsRemaining', () => {
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(-1, OWNER.ME, source, destination, 3)).toThrow();
+        });
+        it('does not throw error when passed in params match this', () => {
+            console.log('look here');
+            const bomb = Bomb.createFriendlyBomb(source, destination);
+            expect(() => bomb.validate(-1, OWNER.ME, source, destination, 4)).not.toThrow();
+        });
+    });
 });
