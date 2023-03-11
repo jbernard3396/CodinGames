@@ -11,6 +11,7 @@ const Troops = require('../src/main.js').Troops;
 const GameContext = require('../src/main.js').GameContext;
 const OWNER = require('../src/main.js').OWNER;
 const Link = require('../src/main.js').Link;
+const Bomb = require('../src/main.js').Bomb;
 source = new Factory(1, OWNER.ME, 5, 3, 2);
 destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
 link = new Link(-1, source, destination, 5);
@@ -53,6 +54,13 @@ describe('Comander', () => {
             let destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
             commander.trySendBomb(source, destination);
             expect(spy).toHaveBeenCalledWith('BOMB 1 2');
+        });
+        it('calls Bomb.CreateFriendlyBomb', () => {
+            let source = new Factory(1, OWNER.ME, 12, 2, 2);
+            let destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
+            const spy = jest.spyOn(Bomb, 'createFriendlyBomb');
+            commander.trySendBomb(source, destination);
+            expect(spy).toHaveBeenCalledWith(source, destination);
         });
     });
     describe('tryWait', () => {

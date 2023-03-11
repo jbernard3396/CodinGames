@@ -15,6 +15,7 @@ class Comander {
         this.#upgradeFactory(factory.getId());
     }
     static trySendBomb(source, destination) {
+        Bomb.createFriendlyBomb(source, destination);
         this.#sendBomb(source.getId(), destination.getId());
     }
     static tryWait() {
