@@ -8,11 +8,14 @@ global.console = {
 const commander = require('../src/main.js').Comander;
 const Factory = require('../src/main.js').Factory;
 const Troops = require('../src/main.js').Troops;
+const GameContext = require('../src/main.js').GameContext;
 const OWNER = require('../src/main.js').OWNER;
 const Link = require('../src/main.js').Link;
 source = new Factory(1, OWNER.ME, 5, 3, 2);
 destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
-link = new Link(source, destination, 5);
+link = new Link(-1, source, destination, 5);
+gameContext = GameContext.getInstance();
+gameContext.addLink(link);
 
 
 describe('Comander', () => {
@@ -25,7 +28,7 @@ describe('Comander', () => {
         it('calls factory.sendTroops', () => {
             const spy = jest.spyOn(source, 'sendTroops');
             commander.trySendTroops(source, destination, 1);
-            expect(spy).toHaveBeenCalledWith(destination, 1, 1);
+            expect(spy).toHaveBeenCalledWith(destination, 1, 5);
         });
     });
 
