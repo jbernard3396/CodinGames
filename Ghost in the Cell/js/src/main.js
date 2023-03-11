@@ -6,6 +6,7 @@ const OWNER = {
 
 class Comander {
     static trySendTroops(source, destination, numTroops) {
+        // distance = GameContext.getInstance().getDistance(source, destination);
         const distance = 1;
         source.sendTroops(destination, numTroops, distance);
         this.#sendTroops(source.getId(), destination.getId(), numTroops);
@@ -380,6 +381,9 @@ class GameContext {
     }
     addBomb(bomb) {
         this.#bombs.push(bomb);
+    }
+    getDistanceBetweenTwoFactories(factory1, factory2) {
+        return this.getLinkByTwoFactoryIds(factory1.getId(), factory2.getId()).getDistance();
     }
 }
 

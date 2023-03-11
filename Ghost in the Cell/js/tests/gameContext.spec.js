@@ -61,4 +61,14 @@ describe('GameContext', () => {
             expect(gameContext.getLinkByTwoFactoryIds(1, 2).getId()).toBe(1);
         });
     });
+    describe('getDistanceBetweenTwoFactories', () => {
+        it('returns the distance between the two factories', () => {
+            const gameContext = GameContext.getInstance();
+            const factory1 = new Factory(1, 1, 1, 1, 1);
+            const factory2 = new Factory(2, 1, 1, 1, 1);
+            const link1 = new Link(1, factory1, factory2, 3);
+            gameContext.addLink(link1);
+            expect(gameContext.getDistanceBetweenTwoFactories(factory1, factory2)).toBe(3);
+        });
+    });
 });

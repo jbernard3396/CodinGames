@@ -9,8 +9,11 @@ const commander = require('../src/main.js').Comander;
 const Factory = require('../src/main.js').Factory;
 const Troops = require('../src/main.js').Troops;
 const OWNER = require('../src/main.js').OWNER;
+const Link = require('../src/main.js').Link;
 source = new Factory(1, OWNER.ME, 5, 3, 2);
 destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
+link = new Link(source, destination, 5);
+
 
 describe('Comander', () => {
     describe('trySendTroops', () => {
