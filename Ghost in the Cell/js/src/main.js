@@ -382,7 +382,7 @@ class GameContext {
         return this.#links;
     }
     #getLinkByTwoFactoryIds(factory1Id, factory2Id) {
-        return this.#links.find(link => (link.getFactory1().getId() == factory1Id && link.getFactory2().getId() == factory2Id) || (link.getFactory1().getId() == factory2Id && link.getFactory2().getId() == factory1Id));
+        return this.#links.find(link => (link.getFactory1() == factory1Id && link.getFactory2() == factory2Id) || (link.getFactory1() == factory2Id && link.getFactory2() == factory1Id));
     }
     addLink(link) {
         this.#links.push(link);
@@ -450,25 +450,28 @@ function getAttackDesireability(source, target){
 }
 
 function init(){
-    const factoryCount = parseInt(readline()); // the number of factories
+    const factoryCount = parseInt(readline());
     const linkCount = parseInt(readline()); // the number of links between factories
-    let links = [];
+    var gameContext = GameContext.getInstance();
     for (let i = 0; i < linkCount; i++) {
         var inputs = readline().split(' ');
         const factory1 = parseInt(inputs[0]);
         const factory2 = parseInt(inputs[1]);
         const distance = parseInt(inputs[2]);
-        links.push({factory1, factory2, distance})
+        var link = new Link(i, factory1, factory2, distance);
+        gameContext.addLink(link);
     }
-    return links;
 }
 
 // game loop
 let myFactory;
 function main() {
-    let links = init()
+    init()
+    var gameContext = GameContext.getInstance();
     while (true) {
+        console.error('test');
         const entityCount = parseInt(readline()); // the number of entities (e.g. factories and troops)
+        console.error(entityCount);
         for (let i = 0; i < entityCount; i++) {
             var inputs = readline().split(' ');
             const entityId = parseInt(inputs[0]);
@@ -479,20 +482,24 @@ function main() {
             const arg4 = parseInt(inputs[5]);
             const arg5 = parseInt(inputs[6]);
             if(entityType == "FACTORY") {
-                if(arg1 == 1) {
-                    myFactory = entityId;
-                }
+                gameContext.addFactory(new Factory(entityId, arg1, arg2, arg3, arg4));
+            }
+            if(entityType == "TROOP"){
+                gameContext.addTroop(new Troops(entityId, arg1, arg2, arg3, arg4, arg5))
+            }
+            if(entityType == "BOMB"){
+                gameContext.addBomb(new Bomb(entityId, arg1, arg2, arg3, arg4));
             }
         }
     
-        // Write an action using console.log()
-        // To debug: console.error('Debug messages...');
-    
-    
-        // Any valid action, such as "WAIT" or "MOVE source destination cyborgs"
-        sendTroops(myFactory, 2, 1);
+        console.error(gameContext.getFactories()[1].getOwner());
+
+
+        Comander.trySendTroops(gameContext.getFactories()[1], 
+                            gameContext.getFactories()[2], 
+                            1);
     }
 }
 //this ain't great, but for now swap which of these two lines is commented out to run the tests or the game
-// main();
-module.exports = { OWNER, Comander, Troops, Factory, Link, Bomb, GameContext, GameFacts, main, getDistance, getClosestFactory };
+main();
+// module.exports = { OWNER, Comander, Troops, Factory, Link, Bomb, GameContext, GameFacts, main, getDistance, getClosestFactory };

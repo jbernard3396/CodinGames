@@ -23,9 +23,7 @@ describe('GameContext', () => {
     describe('addLink', () => {
         it('adds a link to the list of links', () => {
             const gameContext = GameContext.getInstance();
-            const factory1 = new Factory(1, 1, 1, 1, 1);
-            const factory2 = new Factory(2, 1, 1, 1, 1);
-            const link1 = new Link(1, factory1, factory2, 3);
+            const link1 = new Link(1, 1, 2, 3);
             gameContext.addLink(link1);
             expect(gameContext.getLinks().length).toBe(1);
             expect(gameContext.getLinks()[0].getId()).toBe(1);
@@ -56,7 +54,7 @@ describe('GameContext', () => {
             const gameContext = GameContext.getInstance();
             const factory1 = new Factory(1, 1, 1, 1, 1);
             const factory2 = new Factory(2, 1, 1, 1, 1);
-            const link1 = new Link(1, factory1, factory2, 3);
+            const link1 = new Link(1, 1, 2, 3);
             gameContext.addLink(link1);
             expect(gameContext.getDistanceBetweenTwoFactories(factory1, factory2)).toBe(3);
         });

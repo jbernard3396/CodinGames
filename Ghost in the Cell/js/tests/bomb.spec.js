@@ -6,9 +6,9 @@ const Link = require('../src/main.js').Link;
 source = new Factory(1, OWNER.ME, 5, 3, 2);
 enemySource = new Factory(2, OWNER.ENEMY, 5, 3, 2);
 destination = new Factory(3, OWNER.ENEMY, 1, 1, 1);
-link = new Link(1, source, destination, 4);
+link = new Link(1, 1, 3, 4);
 GameContext.getInstance().addLink(link);
-enemylink = new Link(1, enemySource, destination, 4);
+enemylink = new Link(1, 2, 3, 4);
 
 describe('Bomb', () => {
     describe('createFriendlyBomb', () => {

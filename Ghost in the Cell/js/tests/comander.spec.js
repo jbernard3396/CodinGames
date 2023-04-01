@@ -14,7 +14,7 @@ const Link = require('../src/main.js').Link;
 const Bomb = require('../src/main.js').Bomb;
 source = new Factory(1, OWNER.ME, 5, 3, 2);
 destination = new Factory(2, OWNER.ENEMY, 1, 1, 1);
-link = new Link(-1, source, destination, 5);
+link = new Link(-1, 1, 2, 5);
 gameContext = GameContext.getInstance();
 gameContext.addLink(link);
 
