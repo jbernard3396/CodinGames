@@ -271,7 +271,7 @@ class Bomb {
         if(source.getOwner() != OWNER.ME){
             throw 'cannot bomb from a factory ' + source.getId() + ' that is not owned by me';
         }
-        const distance = GameContext.getInstance().getLinkByTwoFactoryIds(source.getId(), destination.getId()).getDistance();
+        const distance = GameContext.getInstance().getDistanceBetweenTwoFactories(source, destination);
         return new Bomb(-1, OWNER.ME, source, destination, distance);
     }
     static createEnemyBomb(id, source){
@@ -381,7 +381,7 @@ class GameContext {
     getLinks() {
         return this.#links;
     }
-    getLinkByTwoFactoryIds(factory1Id, factory2Id) {
+    #getLinkByTwoFactoryIds(factory1Id, factory2Id) {
         return this.#links.find(link => (link.getFactory1().getId() == factory1Id && link.getFactory2().getId() == factory2Id) || (link.getFactory1().getId() == factory2Id && link.getFactory2().getId() == factory1Id));
     }
     addLink(link) {
@@ -400,7 +400,7 @@ class GameContext {
         this.#bombs.push(bomb);
     }
     getDistanceBetweenTwoFactories(factory1, factory2) {
-        return this.getLinkByTwoFactoryIds(factory1.getId(), factory2.getId()).getDistance();
+        return this.#getLinkByTwoFactoryIds(factory1.getId(), factory2.getId()).getDistance();
     }
 }
 
