@@ -129,13 +129,97 @@ class Snake {
     }
 
     public deepCopy(): Snake {
-        if (this.isCopy) {
-            return this;
-        }
         const newBody = this.body.map(segment => new SnakeSegment(new Coordinate(segment.coordinate.x, segment.coordinate.y)));
         const copy = new Snake(this.id, this.allegiance, newBody, true);
         copy.currentDirection = this.currentDirection;
         return copy;
+    }
+
+    private stateKey(): string {
+        return this.body
+            .map(segment => `${segment.coordinate.x},${segment.coordinate.y}`)
+            .join('|');
+    }
+
+    private headIsOnEnergyCell(): boolean {
+        const headCell = gameManager.cells.getMaybeByCoordinate(this.head);
+        return !!headCell && headCell.cellObject === CellObject.energyCell;
+    }
+
+    public findFloodFillMoveToEnergyCell(maxExploredStates: number = 100): directionEnum | null {
+        if (this.headIsOnEnergyCell()) {
+            return null;
+        }
+
+        const energyCoordinates = gameManager.cells.powerCells().map((cell) => cell.coordinate);
+        if (energyCoordinates.length === 0) {
+            return null;
+        }
+
+        type FloodNode = { snake: Snake, firstMove: directionEnum };
+        const queue: FloodNode[] = [];
+        const visited = new Set<string>();
+        let bestMove: directionEnum | null = null;
+        let bestDistance = Number.MAX_SAFE_INTEGER;
+
+        const updateBestMove = (snake: Snake, firstMove: directionEnum) => {
+            const closestEnergyCoordinate = snake.head.closest(energyCoordinates);
+            const distanceToClosestEnergy = snake.head.distance(closestEnergyCoordinate);
+            if (distanceToClosestEnergy < bestDistance) {
+                bestDistance = distanceToClosestEnergy;
+                bestMove = firstMove;
+            }
+        };
+
+        for (let i = 0; i < 4; i++) {
+            const direction = i as directionEnum;
+            const movedSnake = this.simulateMove(direction, this);
+            if (!movedSnake) {
+                continue;
+            }
+
+            const key = movedSnake.stateKey();
+            if (visited.has(key)) {
+                continue;
+            }
+            visited.add(key);
+
+            if (movedSnake.headIsOnEnergyCell()) {
+                return direction;
+            }
+
+            updateBestMove(movedSnake, direction);
+            queue.push({ snake: movedSnake, firstMove: direction });
+        }
+
+        let nextIndex = 0;
+        while (nextIndex < queue.length && visited.size < maxExploredStates) {
+            const current = queue[nextIndex];
+            nextIndex++;
+
+            for (let i = 0; i < 4; i++) {
+                const direction = i as directionEnum;
+                const movedSnake = current.snake.simulateMove(direction, current.snake);
+                if (!movedSnake) {
+                    continue;
+                }
+
+                const key = movedSnake.stateKey();
+                if (visited.has(key)) {
+                    continue;
+                }
+                visited.add(key);
+
+                if (movedSnake.headIsOnEnergyCell()) {
+                    return current.firstMove;
+                }
+
+                updateBestMove(movedSnake, current.firstMove);
+                queue.push({ snake: movedSnake, firstMove: current.firstMove });
+            }
+        }
+
+        return bestMove;
     }
 
     public positionsICanMoveTo(): { direction: directionEnum, snake: Snake }[] {
@@ -156,7 +240,7 @@ class Snake {
         const snake = currentSnake.deepCopy();
         //There are a few cases we need to handle
         // first: if the cell above has my second segment, this is illegal, return null
-        if (snake.head.getCoordinateInDirection(direction).equals(snake.body[1].coordinate)) {
+        if (snake.body.length > 1 && snake.head.getCoordinateInDirection(direction).equals(snake.body[1].coordinate)) {
             return null;
         }
         //second: if the cell above has a platform I will die and not move
@@ -204,6 +288,9 @@ class Snake {
         //remove the last segment from the snake and then simulate a fall
         //todo:J if I have three segments, die instead
         snake.body.pop();
+        if (snake.body.length <= 2) {
+            return null;
+        }
         return snake.simulateFall(snake);
     }
 
@@ -266,7 +353,11 @@ class Cell {
         //iterate down through cells until we reach a platform, return that distance
         let distance = 0;
         let currentCell: Cell = this;
-        while(currentCell.cellObject != CellObject.platform && currentCell.cellObject != CellObject.energyCell) {
+        while (
+            currentCell.cellObject != CellObject.platform &&
+            currentCell.cellObject != CellObject.energyCell &&
+            currentCell.cellObject != CellObject.offGrid
+        ) {
             currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y+1));
             distance++;
         }
@@ -295,11 +386,17 @@ class Cells {
     }
 
     public getByCoordinate(coordinate:Coordinate) {
-        const cell = this.getMaybeByCoordinate(coordinate);
-        if (!cell) {
-            throw new Error(`No cell exists at ${coordinate.print()}`);
+        const existingCell = this.getMaybeByCoordinate(coordinate);
+        if (existingCell) {
+            return existingCell;
         }
-        return cell;
+
+        const offGridCell = new Cell(
+            new Coordinate(coordinate.x, coordinate.y),
+            CellObject.offGrid
+        );
+        this.collection.push(offGridCell);
+        return offGridCell;
     }
 
     public markPowerCell(coordinate:Coordinate) {
@@ -409,6 +506,13 @@ class GameManager {
                 const powerCells = this.cells.powerCells();
                 if (powerCells.length === 0) {
                     commandString += `${snake.id} UP;`
+                    return;
+                }
+
+                const floodFillDirection = snake.findFloodFillMoveToEnergyCell();
+                if (floodFillDirection !== null) {
+                    snake.currentDirection = floodFillDirection;
+                    commandString += `${snake.id} ${directions[floodFillDirection]};`;
                     return;
                 }
 
