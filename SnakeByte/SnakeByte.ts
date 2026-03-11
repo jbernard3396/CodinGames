@@ -7,6 +7,14 @@ function debug(message: string) {
     console.error('DEBUG: ' + message);
 }
 
+function throwWarning(message: string) {
+    console.error(`WARNING: ${message}`);
+}
+
+function tempDebug(message: string) {
+    console.error('TEMP_DEBUG: ' + message);
+}
+
 /**
  * Enums
  */
@@ -20,6 +28,13 @@ enum CellObject {
     empty = 0,
     platform = 1,
     energyCell = 2
+}
+
+enum directionEnum {
+    up = 0,
+    down = 1,
+    left = 2,
+    right = 3
 }
 
 /**
@@ -47,11 +62,23 @@ class Coordinate {
     }
     public adjacentCoordinates(): Coordinate[] {
         return [
-            new Coordinate(this.x + 1, this.y),
-            new Coordinate(this.x - 1, this.y),
-            new Coordinate(this.x, this.y + 1),
-            new Coordinate(this.x, this.y - 1)
+            this.getCoordinateInDirection(directionEnum.right),
+            this.getCoordinateInDirection(directionEnum.left),
+            this.getCoordinateInDirection(directionEnum.up),
+            this.getCoordinateInDirection(directionEnum.down)
         ];
+    }
+    public getCoordinateInDirection(direction:directionEnum):Coordinate {
+        switch(direction){
+            case directionEnum.up:
+                return new Coordinate(this.x, this.y-1);
+            case directionEnum.down:
+                return new Coordinate(this.x, this.y+1);
+            case directionEnum.left:
+                return new Coordinate(this.x-1, this.y);
+            case directionEnum.right:
+                return new Coordinate(this.x+1, this.y);
+        }
     }
 
     public closest(others:Coordinate[]) {
@@ -79,14 +106,17 @@ class SnakeSegment {
 }
 
 class Snake {
-    constructor(id:number, allegiance:Allegiance, body:SnakeSegment[]){
+    constructor(id: number, allegiance: Allegiance, body: SnakeSegment[], isCopy: boolean = false) {
         this.id = id;
         this.allegiance = allegiance;
         this.body = body;
+        this.isCopy = isCopy;
     }
     public id: number;
     public allegiance: Allegiance;
     public body: SnakeSegment[];
+    public isCopy: boolean;
+    public currentDirection: directionEnum = directionEnum.up;
     public get head(): Coordinate {
         return this.body[0].coordinate;
     }
@@ -95,6 +125,75 @@ class Snake {
     public update(snake: Snake) {
         this.allegiance = snake.allegiance;
         this.body = snake.body;
+        this.isCopy = snake.isCopy;
+    }
+
+    public deepCopy(): Snake {
+        if (this.isCopy) {
+            return this;
+        }
+        const newBody = this.body.map(segment => new SnakeSegment(new Coordinate(segment.coordinate.x, segment.coordinate.y)));
+        const copy = new Snake(this.id, this.allegiance, newBody, true);
+        copy.currentDirection = this.currentDirection;
+        return copy;
+    }
+
+    public positionsICanMoveTo(): { direction: directionEnum, snake: Snake }[] {
+        const possibleMoves: { direction: directionEnum, snake: Snake }[] = [];
+        for (let i = 0; i < 4; i++) {
+            const direction = i as directionEnum;
+            const possibleMove = this.simulateMove(direction, this);
+            if (possibleMove) {
+                possibleMoves.push({ direction, snake: possibleMove });
+            }
+        }
+        return possibleMoves;
+    }
+
+    //todo:J super afraid of editing the snakes in place, lets make sure these are deep copies or whatever
+    //todo:J this should be somewhere else? maybe a static game simulator?
+    public simulateMove(direction: directionEnum, currentSnake: Snake): Snake | null {
+        const snake = currentSnake.deepCopy();
+        //There are a few cases we need to handle
+        // first: if the cell above has my second segment, this is illegal, return null
+        if (snake.head.getCoordinateInDirection(direction).equals(snake.body[1].coordinate)) {
+            return null;
+        }
+        //second: if the cell above has a platform I will die and not move
+        const cellAbove = gameManager.cells.getMaybeByCoordinate(snake.head.getCoordinateInDirection(direction));
+        if (cellAbove && cellAbove.cellObject == CellObject.platform) {
+            return snake.simulateDamage(snake);
+        }
+        //iterate movements and then simulate fall and return
+        const movedSnake = snake.iterateMovements(direction, snake);
+        return movedSnake.simulateFall(movedSnake);
+    }
+
+    public simulateFall(currentSnake: Snake): Snake { //todo:J fill out
+        const snake = currentSnake.deepCopy();
+        return snake;
+    }
+
+    public simulateDamage(currentSnake: Snake): Snake {
+        const snake = currentSnake.deepCopy();
+        //remove the last segment from the snake and then simulate a fall
+        //todo:J if I have three segments, die instead
+        snake.body.pop();
+        return snake.simulateFall(snake);
+    }
+
+    //todo:J holy cow what is THIS function called
+    public iterateMovements(direction: directionEnum, currentSnake: Snake): Snake {
+        const snake = currentSnake.deepCopy();
+        const newBody: SnakeSegment[] = [];
+        const newHeadCoordinate = snake.body[0].coordinate.getCoordinateInDirection(direction);
+        newBody.push(new SnakeSegment(newHeadCoordinate));
+
+        for (let i = 0; i < snake.body.length - 1; i++) {
+            newBody.push(new SnakeSegment(snake.body[i].coordinate));
+        }
+
+        return new Snake(snake.id, snake.allegiance, newBody, true);
     }
 
     public lowestSegmentIndexOverCellObjects(cells: Cells, cellObjects: CellObject[] = [CellObject.platform]): number | null {
@@ -137,6 +236,22 @@ class Cell {
     }
     public coordinate: Coordinate;
     public cellObject: CellObject;
+
+    public distanceDropToPlatform():number {
+        //iterate down through cells until we reach a platform, return that distance
+        let distance = 0;
+        let currentCell: Cell = this;
+        while(currentCell.cellObject != CellObject.platform) {
+            currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y-1));
+            distance++;
+        }
+        return distance;
+    }
+
+    public reachableBySnakeOfLength(length:number):boolean {
+        //for now return true if the drop to platform distance is less than the snake length
+        return this.distanceDropToPlatform() <= length;  //todo:J off by one??
+    }
 }
 
 class Cells {
@@ -164,6 +279,10 @@ class Cells {
 
     public markPowerCell(coordinate:Coordinate) {
         this.getByCoordinate(coordinate).cellObject = CellObject.energyCell;
+    }
+
+    public powerCells(): Cell[] {
+        return this.collection.filter((cell) => cell.cellObject == CellObject.energyCell);
     }
 
     public platforms(): Cell[] {
@@ -230,6 +349,7 @@ class GameManager {
 
     public runGameLoop() {
         while (true) {
+            var commandString: string = "";
             const powerSourceCount: number = parseInt(readline());
             this.cells.clearPowerCells();
             for (let i = 0; i < powerSourceCount; i++) {
@@ -240,6 +360,7 @@ class GameManager {
             }
 
             const snakeBotCount: number = parseInt(readline());
+            const mySnakes: Snake[] = [];
             for (let i = 0; i < snakeBotCount; i++) {
                 var inputs: string[] = readline().split(' ');
                 const snakeBotId: number = parseInt(inputs[0]);
@@ -247,9 +368,74 @@ class GameManager {
                 const allegiance: Allegiance = this.mySnakeBotIds.includes(snakeBotId) ? Allegiance.mine : Allegiance.enemy1;
                 const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
                 this.snakes.upsert(snake);
+                if (allegiance === Allegiance.mine) {
+                    mySnakes.push(this.snakes.collection.find(s => s.id === snakeBotId)!); //todo:J this is stupid we should just pull this from snakes.mine or whatever
+                }
             }
 
-            console.log('WAIT');
+
+            const directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']; //todo:J  move this to a proper place
+
+
+            mySnakes.forEach((snake) => { //todo:J move this to a strategy manager?
+                // if (snake.id != 1){
+                //     return;
+                // }
+                const powerCells = this.cells.powerCells();
+                if (powerCells.length === 0) {
+                    commandString += `${snake.id} UP;`
+                    return;
+                }
+
+                const closestPowerCell:Coordinate = snake.head.closest(powerCells.map(pc => pc.coordinate));
+                // tempDebug(`closest power cell to snake ${snake.id}: ${closestPowerCell.print()}`)
+                const currentDistance:number = snake.head.distance(closestPowerCell);
+                // tempDebug(`distance: ${currentDistance.toString()}`)
+
+                const possibleMoves = snake.positionsICanMoveTo();
+                
+                let bestMove: { direction: directionEnum, snake: Snake } | null = null;
+                let minDistance = currentDistance;
+
+                // 1. Try to find a move that gets us closer
+                for (const move of possibleMoves) {
+                    tempDebug(`checking move ${move.direction} for snake ${snake.id}`)
+                    tempDebug(`new head: ${move.snake.head.print()}`)
+                    tempDebug(`closest power cell: ${closestPowerCell.print()}`)
+                    tempDebug(`distance: ${move.snake.head.distance(closestPowerCell)}`)
+                    const newDistance = move.snake.head.distance(closestPowerCell);
+                    if (newDistance < minDistance) {
+                        minDistance = newDistance;
+                        bestMove = move;
+                    }
+                }
+                // debug(bestMove?.snake.head.print())
+
+                // 2. If no move is closer, pick a random move that preserves length
+                if (!bestMove) {
+                    const lengthPreservingMoves = possibleMoves.filter(m => m.snake.body.length === snake.body.length);
+                    if (lengthPreservingMoves.length > 0) {
+                        throwWarning(`${snake.id} is makeing length preserving move - not great`)
+                        bestMove = lengthPreservingMoves[0];
+                    } else if (possibleMoves.length > 0) {
+                        // Desperation move
+                        throwWarning(`${snake.id} is making desperation move - AHHH`)
+                        bestMove = possibleMoves[0];
+                    }
+                }
+
+                if (bestMove) {
+                    snake.currentDirection = bestMove.direction;
+                    commandString += `${snake.id} ${directions[bestMove.direction]};`;
+                    return
+                } else {
+                    commandString += `${snake.id} UP;`
+                    return
+                }
+            });
+            console.log(commandString);
+
+            
         }
     }
 }
