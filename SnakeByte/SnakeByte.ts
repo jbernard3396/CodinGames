@@ -169,8 +169,33 @@ class Snake {
         return movedSnake.simulateFall(movedSnake);
     }
 
-    public simulateFall(currentSnake: Snake): Snake { //todo:J fill out
+    public simulateFall(currentSnake: Snake): Snake {
         const snake = currentSnake.deepCopy();
+        if (snake.body.length === 0) {
+            return snake;
+        }
+
+        let smallestDropDistance = Number.MAX_SAFE_INTEGER;
+        for (const segment of snake.body) {
+            const cell = gameManager.cells.getByCoordinate(segment.coordinate);
+            const dropDistance = Math.max(0, cell.distanceDropToPlatform() - 1);
+
+            if (dropDistance < smallestDropDistance) {
+                smallestDropDistance = dropDistance;
+            }
+        }
+
+        if (!Number.isFinite(smallestDropDistance) || smallestDropDistance <= 0) {
+            return snake;
+        }
+
+        for (const segment of snake.body) {
+            segment.coordinate = new Coordinate(
+                segment.coordinate.x,
+                segment.coordinate.y + smallestDropDistance
+            );
+        }
+
         return snake;
     }
 
@@ -241,8 +266,8 @@ class Cell {
         //iterate down through cells until we reach a platform, return that distance
         let distance = 0;
         let currentCell: Cell = this;
-        while(currentCell.cellObject != CellObject.platform) {
-            currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y-1));
+        while(currentCell.cellObject != CellObject.platform && currentCell.cellObject != CellObject.energyCell) {
+            currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y+1));
             distance++;
         }
         return distance;
@@ -399,10 +424,10 @@ class GameManager {
 
                 // 1. Try to find a move that gets us closer
                 for (const move of possibleMoves) {
-                    tempDebug(`checking move ${move.direction} for snake ${snake.id}`)
-                    tempDebug(`new head: ${move.snake.head.print()}`)
-                    tempDebug(`closest power cell: ${closestPowerCell.print()}`)
-                    tempDebug(`distance: ${move.snake.head.distance(closestPowerCell)}`)
+                    // tempDebug(`checking move ${move.direction} for snake ${snake.id}`)
+                    // tempDebug(`new head: ${move.snake.head.print()}`)
+                    // tempDebug(`closest power cell: ${closestPowerCell.print()}`)
+                    // tempDebug(`distance: ${move.snake.head.distance(closestPowerCell)}`)
                     const newDistance = move.snake.head.distance(closestPowerCell);
                     if (newDistance < minDistance) {
                         minDistance = newDistance;
