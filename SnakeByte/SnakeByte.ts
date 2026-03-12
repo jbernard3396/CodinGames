@@ -106,16 +106,18 @@ class SnakeSegment {
 }
 
 class Snake {
-    constructor(id: number, allegiance: Allegiance, body: SnakeSegment[], isCopy: boolean = false) {
+    constructor(id: number, allegiance: Allegiance, body: SnakeSegment[], isCopy: boolean = false, simulatedFrame: number = 0) {
         this.id = id;
         this.allegiance = allegiance;
         this.body = body;
         this.isCopy = isCopy;
+        this.simulatedFrame = simulatedFrame;
     }
     public id: number;
     public allegiance: Allegiance;
     public body: SnakeSegment[];
     public isCopy: boolean;
+    public simulatedFrame: number;
     public currentDirection: directionEnum = directionEnum.up;
     public get head(): Coordinate {
         return this.body[0].coordinate;
@@ -126,11 +128,12 @@ class Snake {
         this.allegiance = snake.allegiance;
         this.body = snake.body;
         this.isCopy = snake.isCopy;
+        this.simulatedFrame = snake.simulatedFrame;
     }
 
     public deepCopy(): Snake {
         const newBody = this.body.map(segment => new SnakeSegment(new Coordinate(segment.coordinate.x, segment.coordinate.y)));
-        const copy = new Snake(this.id, this.allegiance, newBody, true);
+        const copy = new Snake(this.id, this.allegiance, newBody, true, this.simulatedFrame);
         copy.currentDirection = this.currentDirection;
         return copy;
     }
@@ -238,17 +241,17 @@ class Snake {
     //todo:J this should be somewhere else? maybe a static game simulator?
     public simulateMove(direction: directionEnum, currentSnake: Snake): Snake | null {
         const snake = currentSnake.deepCopy();
-        //There are a few cases we need to handle
-        // first: if the cell above has my second segment, this is illegal, return null
-        if (snake.body.length > 1 && snake.head.getCoordinateInDirection(direction).equals(snake.body[1].coordinate)) {
+        snake.simulatedFrame += 1;
+        const targetCoordinate = snake.head.getCoordinateInDirection(direction);
+        if (snake.body.length > 1 && targetCoordinate.equals(snake.body[1].coordinate)) {
             return null;
         }
-        //second: if the cell above has a platform I will die and not move
-        const cellAbove = gameManager.cells.getMaybeByCoordinate(snake.head.getCoordinateInDirection(direction));
-        if (cellAbove && cellAbove.cellObject == CellObject.platform) {
+        const cellAbove = gameManager.cells.getMaybeByCoordinate(targetCoordinate);
+        const futureFrame = snake.simulatedFrame + 1;
+        const hasFutureSnakeSegment = gameManager.snakes.willThereBeASegmentHereInFrames(targetCoordinate, futureFrame);
+        if ((cellAbove && cellAbove.cellObject == CellObject.platform) || hasFutureSnakeSegment) {
             return snake.simulateDamage(snake);
         }
-        //iterate movements and then simulate fall and return
         const movedSnake = snake.iterateMovements(direction, snake);
         return movedSnake.simulateFall(movedSnake);
     }
@@ -310,7 +313,7 @@ class Snake {
             newBody.push(new SnakeSegment(snake.body[i].coordinate));
         }
 
-        return new Snake(snake.id, snake.allegiance, newBody, true);
+        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
     }
 
     public lowestSegmentIndexOverCellObjects(cells: Cells, cellObjects: CellObject[] = [CellObject.platform]): number | null {
@@ -343,6 +346,24 @@ class Snakes {
             return;
         }
         snakeToUpdate.update(snake);
+    }
+
+    public willThereBeASegmentHereInFrames(coordinate: Coordinate, futureFrames: number): boolean {
+        const normalizedFutureFrames = Math.max(0, futureFrames);
+        for (const snake of this.collection) {
+            for (let i = 0; i < snake.body.length; i++) {
+                const segment = snake.body[i];
+                if (!segment.coordinate.equals(coordinate)) {
+                    continue;
+                }
+
+                const framesUntilCoordinateIsVacated = snake.body.length - i;
+                if (normalizedFutureFrames < framesUntilCoordinateIsVacated) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
 
