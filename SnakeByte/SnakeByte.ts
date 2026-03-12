@@ -262,11 +262,16 @@ class Snake {
         let smallestDropDistance = Number.MAX_SAFE_INTEGER;
         for (const segment of snake.body) {
             const cell = gameManager.cells.getByCoordinate(segment.coordinate);
-            const dropDistance = Math.max(0, cell.distanceDropToPlatform() - 1);
+            const dropDistance = cell.distanceDropToPlatform(); //todo:J investigate for OBO
 
             if (dropDistance < smallestDropDistance) {
                 smallestDropDistance = dropDistance;
             }
+        }
+
+        if(smallestDropDistance == -1){ //snake fell off grid
+            tempDebug(`snake ${snake.id} explored fallling off grid from cell ${snake.head.print()}`);
+            return null;
         }
 
         if (!Number.isFinite(smallestDropDistance) || smallestDropDistance <= 0) {
@@ -352,21 +357,19 @@ class Cell {
     public distanceDropToPlatform():number {
         //iterate down through cells until we reach a platform, return that distance
         let distance = 0;
-        let currentCell: Cell = this;
+        let currentCell: Cell = gameManager.cells.getByCoordinate(this.coordinate.getCoordinateInDirection(directionEnum.down));
         while (
             currentCell.cellObject != CellObject.platform &&
-            currentCell.cellObject != CellObject.energyCell &&
-            currentCell.cellObject != CellObject.offGrid
+            currentCell.cellObject != CellObject.energyCell
         ) {
+            if(currentCell.cellObject == CellObject.offGrid){
+                tempDebug(`cell ${currentCell.coordinate} explored falling off grid`);
+                return -1
+            }
             currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y+1));
             distance++;
         }
         return distance;
-    }
-
-    public reachableBySnakeOfLength(length:number):boolean {
-        //for now return true if the drop to platform distance is less than the snake length
-        return this.distanceDropToPlatform() <= length;  //todo:J off by one??
     }
 }
 
