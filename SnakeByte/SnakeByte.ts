@@ -12,7 +12,7 @@ function throwWarning(message: string) {
 }
 
 function tempDebug(message: string) {
-    console.error('TEMP_DEBUG: ' + message);
+    console.error(message);
 }
 
 /**
@@ -37,6 +37,14 @@ enum directionEnum {
     down = 1,
     left = 2,
     right = 3
+}
+
+enum FloodFillExitReason {
+    notRun = 'not_run',
+    ranOutOfTime = 'ran_out_of_time',
+    visitedEveryState = 'visited_every_state',
+    hitMaxVisited = 'hit_max_visited',
+    ranOutOfTurnTime = 'ran_out_of_turn_time'
 }
 
 const DIRECTION_LABELS: string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
@@ -108,6 +116,53 @@ class SnakeSegment {
     public coordinate: Coordinate;
 }
 
+class SnakeMessage {
+    public snakeId: number = -1;
+    public turnStartMs: number = 0;
+    public turnEndMs: number = 0;
+    public floodFillBudgetMs: number = 0;
+    public floodFillStatesVisited: number = 0;
+    public floodFillMaxVisited: number = 0;
+    public floodFillExitReason: FloodFillExitReason = FloodFillExitReason.notRun;
+    public floodFillBestMove: directionEnum | null = null;
+    public chosenDirection: directionEnum | null = null;
+
+    public reset(): void {
+        this.turnStartMs = 0;
+        this.turnEndMs = 0;
+        this.floodFillBudgetMs = 0;
+        this.floodFillStatesVisited = 0;
+        this.floodFillMaxVisited = 0;
+        this.floodFillExitReason = FloodFillExitReason.notRun;
+        this.floodFillBestMove = null;
+        this.chosenDirection = null;
+    }
+
+    public getMessage(): string {
+        const snakeDurationMs = this.turnEndMs - this.turnStartMs;
+        // noinspection JSUnusedLocalSymbols
+        const floodFillBestMoveLabel = this.floodFillBestMove === null
+            ? 'none'
+            : DIRECTION_LABELS[this.floodFillBestMove];
+        // noinspection JSUnusedLocalSymbols
+        const chosenLabel = this.chosenDirection === null
+            ? 'none'
+            : DIRECTION_LABELS[this.chosenDirection];
+
+        return (
+            `snake ${this.snakeId} summary: ` +
+            // `start=${this.turnStartMs.toFixed(2)}ms, ` +
+            // `end=${this.turnEndMs.toFixed(2)}ms, ` +
+            `duration=${snakeDurationMs.toFixed(2)}ms, ` +
+            // `budget=${this.floodFillBudgetMs.toFixed(2)}ms, ` +
+            `floodVisited=${this.floodFillStatesVisited}, ` +
+            `floodExit=${this.floodFillExitReason}, `
+            // `floodBest=${floodFillBestMoveLabel}, ` +
+            // `chosen=${chosenLabel}`
+        );
+    }
+}
+
 class Snake {
     constructor(
         id: number,
@@ -123,6 +178,7 @@ class Snake {
         this.isCopy = isCopy;
         this.simulatedFrame = simulatedFrame;
         this.moveChosen = moveChosen;
+        this.snakeMessage.snakeId = id;
     }
     public id: number;
     public allegiance: Allegiance;
@@ -130,6 +186,7 @@ class Snake {
     public isCopy: boolean;
     public simulatedFrame: number;
     public moveChosen: boolean;
+    public snakeMessage: SnakeMessage = new SnakeMessage();
     public currentDirection: directionEnum = directionEnum.up;
     public get head(): Coordinate {
         return this.body[0].coordinate;
@@ -142,6 +199,7 @@ class Snake {
         this.isCopy = snake.isCopy;
         this.simulatedFrame = snake.simulatedFrame;
         this.moveChosen = snake.moveChosen;
+        this.snakeMessage.reset();
     }
 
     public deepCopy(): Snake {
@@ -271,7 +329,6 @@ class GameState {
     public cells: Cells = new Cells();
     public snakes: Snakes = new Snakes();
     public snakeBotsPerPlayer: number = 0;
-    public snakeIdToDebug: number = 6;
 }
 
 class TurnTimer {
@@ -355,8 +412,12 @@ class Simulator {
         maxSnakeBudgetMs: number,
         maxExploredStates: number = 10000
     ): directionEnum | null {
-        const isDebugSnake = snake.id === state.snakeIdToDebug;
         const energyCoordinates = state.cells.powerCells().map((cell) => cell.coordinate);
+        snake.snakeMessage.floodFillBudgetMs = maxSnakeBudgetMs;
+        snake.snakeMessage.floodFillMaxVisited = maxExploredStates;
+        snake.snakeMessage.floodFillStatesVisited = 0;
+        snake.snakeMessage.floodFillBestMove = null;
+        snake.snakeMessage.floodFillExitReason = FloodFillExitReason.notRun;
 
         type FloodNode = { snake: Snake, firstMove: directionEnum | null };
         const queue: FloodNode[] = [{ snake, firstMove: null }];
@@ -420,10 +481,19 @@ class Simulator {
             }
         }
 
-        if (isDebugSnake) {
-            tempDebug(`snake ${snake.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
+        let floodFillExitReason: FloodFillExitReason = FloodFillExitReason.visitedEveryState;
+        if (turnTimer.msUntilBufferDeadline() <= 0) {
+            floodFillExitReason = FloodFillExitReason.ranOutOfTurnTime;
+        } else if (turnTimer.msElapsedThisSnakeTurn() >= maxSnakeBudgetMs) {
+            floodFillExitReason = FloodFillExitReason.ranOutOfTime;
+        } else if (visited.size >= maxExploredStates) {
+            floodFillExitReason = FloodFillExitReason.hitMaxVisited;
         }
-        tempDebug(`snake ${snake.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
+
+        snake.snakeMessage.floodFillStatesVisited = visited.size;
+        snake.snakeMessage.floodFillBestMove = bestMove;
+        snake.snakeMessage.floodFillExitReason = floodFillExitReason;
+
         return bestMove;
     }
 
@@ -533,10 +603,6 @@ class StrategyManager {
         const powerCells = state.cells.powerCells();
         if (powerCells.length === 0) {
             return directionEnum.up;
-        }
-
-        if (snake.id === state.snakeIdToDebug) {
-            tempDebug(`snake ${snake.id} is being debugged`);
         }
 
         const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(
@@ -685,11 +751,13 @@ class TurnEngine {
         let commandString = '';
         mySnakes.forEach((snake) => {
             snake.moveChosen = false;
+            snake.snakeMessage.reset();
         });
 
         mySnakes.forEach((snake) => {
-            tempDebug(`snake ${snake.id} turn start (ms since turn began): ${this.turnTimer.msElapsedThisTurn()}`);
+            snake.snakeMessage.turnStartMs = this.turnTimer.msElapsedThisTurn();
             const maxSnakeBudgetMs = this.turnTimer.msBudgetForNextSnake(mySnakes);
+            snake.snakeMessage.floodFillBudgetMs = maxSnakeBudgetMs;
             this.turnTimer.startSnakeTurn();
             const chosenDirection = this.strategyManager.chooseDirection(
                 this.state,
@@ -699,8 +767,10 @@ class TurnEngine {
             );
             snake.currentDirection = chosenDirection;
             snake.moveChosen = true;
+            snake.snakeMessage.chosenDirection = chosenDirection;
+            snake.snakeMessage.turnEndMs = this.turnTimer.msElapsedThisTurn();
             commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
-            tempDebug(`snake ${snake.id} turn end (ms since turn began): ${this.turnTimer.msElapsedThisTurn()}`);
+            tempDebug(snake.snakeMessage.getMessage());
         });
         return commandString;
     }
