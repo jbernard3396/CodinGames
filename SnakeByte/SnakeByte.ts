@@ -4,10 +4,9 @@
  * Big
  *  1. Optimize flood fill
  *  2. Coordinate Bots
- *  3. goal seek past first cell? probably goal seek so many steps pruning for length and distance to cells, and then take the longest and closest - really need coord to do this
+ *  3. floodfill should prune off of best, not just size?
  *
  * Small
- *  1. energy cells are collected pre fall? - combine this with 3 of above?
  *  2. don't run into tails if the snake head is adjacent to an energy cell
  *
  *
@@ -157,27 +156,9 @@ class Snake {
             .join('|');
     }
 
-    private headIsOnEnergyCell(): boolean {
-        const headCell = gameManager.cells.getMaybeByCoordinate(this.head);
-        return !!headCell && headCell.cellObject === CellObject.energyCell;
-    }
-
     public findFloodFillMoveToEnergyCell(maxExploredStates: number = 100): directionEnum | null {
         const isDebugSnake = this.id === gameManager.snakeIdToDebug;
-        if (this.headIsOnEnergyCell()) {
-            if (isDebugSnake) {
-                tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (already on energy cell)`);
-            }
-            return null;
-        }
-
         const energyCoordinates = gameManager.cells.powerCells().map((cell) => cell.coordinate);
-        if (energyCoordinates.length === 0) {
-            if (isDebugSnake) {
-                tempDebug(`snake ${this.id} flood fill found path to energy cell: no (no energy cells available)`);
-            }
-            return null;
-        }
 
         type FloodNode = { snake: Snake, firstMove: directionEnum };
         const queue: FloodNode[] = [];
@@ -188,8 +169,9 @@ class Snake {
 
         const updateBestMove = (snake: Snake, firstMove: directionEnum) => {
             const length = snake.body.length;
-            const closestEnergyCoordinate = snake.head.closest(energyCoordinates);
-            const distanceToClosestEnergy = snake.head.distance(closestEnergyCoordinate);
+            const distanceToClosestEnergy = energyCoordinates.length > 0
+                ? snake.head.distance(snake.head.closest(energyCoordinates))
+                : Number.MAX_SAFE_INTEGER;
 
             if (length > bestLength || (length === bestLength && distanceToClosestEnergy < bestDistance)) {
                 bestLength = length;
@@ -210,6 +192,10 @@ class Snake {
         initialCandidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
 
         for (const candidate of initialCandidates) {
+            if (visited.size >= maxExploredStates) {
+                break;
+            }
+
             const direction = candidate.direction;
             const movedSnake = candidate.movedSnake;
 
@@ -218,14 +204,6 @@ class Snake {
                 continue;
             }
             visited.add(key);
-
-            if (movedSnake.headIsOnEnergyCell()) {
-                if (isDebugSnake) {
-                    tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (first move ${direction})`);
-                }
-                return direction;
-            }
-
             updateBestMove(movedSnake, direction);
             queue.push({ snake: movedSnake, firstMove: direction });
         }
@@ -247,6 +225,10 @@ class Snake {
             candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
 
             for (const candidate of candidates) {
+                if (visited.size >= maxExploredStates) {
+                    break;
+                }
+
                 const movedSnake = candidate.movedSnake;
 
                 const key = movedSnake.stateKey();
@@ -254,21 +236,13 @@ class Snake {
                     continue;
                 }
                 visited.add(key);
-
-                if (movedSnake.headIsOnEnergyCell()) {
-                    if (isDebugSnake) {
-                        tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (first move ${current.firstMove})`);
-                    }
-                    return current.firstMove;
-                }
-
                 updateBestMove(movedSnake, current.firstMove);
                 queue.push({ snake: movedSnake, firstMove: current.firstMove });
             }
         }
 
         if (isDebugSnake) {
-            tempDebug(`snake ${this.id} flood fill found path to energy cell: no, ran out of states: ${visited.size}`);
+            tempDebug(`snake ${this.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
         }
         return bestMove;
     }
@@ -319,7 +293,7 @@ class Snake {
         }
 
         if(smallestDropDistance == -1){ //snake fell off grid
-            tempDebug(`snake ${snake.id} explored fallling off grid from cell ${snake.head.print()}`);
+            tempDebug(`snake ${snake.id} explored falling off grid from cell ${snake.head.print()}`);
             return null;
         }
 
@@ -339,7 +313,6 @@ class Snake {
 
     public simulateDamage(currentSnake: Snake): Snake {
         const snake = currentSnake.deepCopy();
-        //todo:J if I have three segments, die instead
         snake.body.pop();
         if (snake.body.length <= 2) {
             return null;
@@ -358,22 +331,13 @@ class Snake {
             newBody.push(new SnakeSegment(snake.body[i].coordinate));
         }
 
-        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
-    }
-
-    public lowestSegmentIndexOverCellObjects(cells: Cells, cellObjects: CellObject[] = [CellObject.platform]): number | null {
-        for (let i = 0; i < this.body.length; i++) {
-            const segment = this.body[i];
-            const lowerCoordinate = new Coordinate(segment.coordinate.x, segment.coordinate.y-1);
-            const lowerCell = cells.getByCoordinate(lowerCoordinate);
-            if (!lowerCell) {
-                continue; //off grid
-            }
-            if (cellObjects.includes(lowerCell.cellObject)) {
-                return i;
-            }
+        //if there is a energy cell where the new head is, add the last segment as well
+        const energyCellEaten = gameManager.cells.powerCells().find(cell => cell.coordinate.equals(newHeadCoordinate));
+        if(energyCellEaten){
+            newBody.push(new SnakeSegment(snake.body[snake.body.length - 1].coordinate));
         }
-        return null;
+
+        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
     }
 }
 
