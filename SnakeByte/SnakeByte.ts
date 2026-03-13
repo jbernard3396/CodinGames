@@ -1,19 +1,9 @@
 // noinspection DuplicatedCode
-/**
- * Future Goals
- * Big
- *  1. Optimize flood fill
- *  2. Coordinate Bots
- *  3. floodfill should prune off of best, not just size?
- *
- * Small
- *  2. don't run into tails if the snake head is adjacent to an energy cell
- *
- *
- */
 
 /**
-Helpers
+ * ============================================================================
+ * Helpers
+ * ============================================================================
  */
 function debug(message: string) {
     console.error('DEBUG: ' + message);
@@ -28,7 +18,9 @@ function tempDebug(message: string) {
 }
 
 /**
- * Enums
+ * ============================================================================
+ * Enums And Constants
+ * ============================================================================
  */
 enum Allegiance {
     mine = 0,
@@ -49,8 +41,12 @@ enum directionEnum {
     right = 3
 }
 
+const DIRECTION_LABELS: string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+
 /**
- * Objects
+ * ============================================================================
+ * Domain Objects
+ * ============================================================================
  */
 
 class Coordinate {
@@ -460,6 +456,81 @@ class Cells {
 
 }
 
+/**
+ * ============================================================================
+ * Simulation
+ * ============================================================================
+ */
+class Simulator {
+    public findFloodFillMoveToEnergyCell(snake: Snake, maxExploredStates: number = 100): directionEnum | null {
+        return snake.findFloodFillMoveToEnergyCell(maxExploredStates);
+    }
+
+    public positionsICanMoveTo(snake: Snake): { direction: directionEnum, snake: Snake }[] {
+        return snake.positionsICanMoveTo();
+    }
+}
+
+/**
+ * ============================================================================
+ * Strategy
+ * ============================================================================
+ */
+class StrategyManager {
+    constructor(private simulator: Simulator) {}
+
+    public chooseDirection(snake: Snake, cells: Cells, snakeIdToDebug: number): directionEnum {
+        const powerCells = cells.powerCells();
+        if (powerCells.length === 0) {
+            return directionEnum.up;
+        }
+
+        if (snake.id === snakeIdToDebug) {
+            tempDebug(`snake ${snake.id} is being debugged`);
+        }
+
+        const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(snake);
+        if (floodFillDirection !== null) {
+            return floodFillDirection;
+        }
+
+        const closestPowerCell: Coordinate = snake.head.closest(powerCells.map(pc => pc.coordinate));
+        const currentDistance: number = snake.head.distance(closestPowerCell);
+
+        const possibleMoves = this.simulator.positionsICanMoveTo(snake);
+        let bestMove: { direction: directionEnum, snake: Snake } | null = null;
+        let minDistance = currentDistance;
+
+        // 1. Try to find a move that gets us closer.
+        for (const move of possibleMoves) {
+            const newDistance = move.snake.head.distance(closestPowerCell);
+            if (newDistance < minDistance) {
+                minDistance = newDistance;
+                bestMove = move;
+            }
+        }
+
+        // 2. If no move is closer, pick a move that preserves length.
+        if (!bestMove) {
+            const lengthPreservingMoves = possibleMoves.filter(m => m.snake.body.length === snake.body.length);
+            if (lengthPreservingMoves.length > 0) {
+                throwWarning(`${snake.id} is makeing length preserving move - not great`);
+                bestMove = lengthPreservingMoves[0];
+            } else if (possibleMoves.length > 0) {
+                throwWarning(`${snake.id} is making desperation move - AHHH`);
+                bestMove = possibleMoves[0];
+            }
+        }
+
+        return bestMove ? bestMove.direction : directionEnum.up;
+    }
+}
+
+/**
+ * ============================================================================
+ * Parsing
+ * ============================================================================
+ */
 function parseSnakeBody(rawBody: string): SnakeSegment[] {
     const segments: SnakeSegment[] = [];
     const coordinateParts = rawBody.match(/-?\d+,-?\d+/g);
@@ -473,6 +544,11 @@ function parseSnakeBody(rawBody: string): SnakeSegment[] {
     return segments;
 }
 
+/**
+ * ============================================================================
+ * Application
+ * ============================================================================
+ */
 class GameManager {
     public myId: number = -1;
     public width: number = 0;
@@ -482,6 +558,8 @@ class GameManager {
     public mySnakeBotIds: number[] = [];
     public snakeBotsPerPlayer: number = 0;
     public snakeIdToDebug: number = 6;
+    public simulator: Simulator = new Simulator();
+    public strategyManager: StrategyManager = new StrategyManager(this.simulator);
 
     public initialize() {
         this.myId = parseInt(readline());
@@ -533,65 +611,10 @@ class GameManager {
             }
 
 
-            const directions = ['UP', 'DOWN', 'LEFT', 'RIGHT']; //todo:J  move this to a proper place
-
-
-            mySnakes.forEach((snake) => { //todo:J move this to a strategy manager?
-                const powerCells = this.cells.powerCells();
-                if (powerCells.length === 0) {
-                    commandString += `${snake.id} UP;`
-                    return;
-                }
-                if(snake.id === this.snakeIdToDebug){
-                    tempDebug(`snake ${snake.id} is being debugged`)
-                }
-
-                const floodFillDirection = snake.findFloodFillMoveToEnergyCell();
-                if (floodFillDirection !== null) {
-                    snake.currentDirection = floodFillDirection;
-                    commandString += `${snake.id} ${directions[floodFillDirection]};`;
-                    return;
-                }
-
-                const closestPowerCell:Coordinate = snake.head.closest(powerCells.map(pc => pc.coordinate));
-                const currentDistance:number = snake.head.distance(closestPowerCell);
-
-                const possibleMoves = snake.positionsICanMoveTo();
-                
-                let bestMove: { direction: directionEnum, snake: Snake } | null = null;
-                let minDistance = currentDistance;
-
-                // 1. Try to find a move that gets us closer
-                for (const move of possibleMoves) {
-                    const newDistance = move.snake.head.distance(closestPowerCell);
-                    if (newDistance < minDistance) {
-                        minDistance = newDistance;
-                        bestMove = move;
-                    }
-                }
-                // debug(bestMove?.snake.head.print())
-
-                // 2. If no move is closer, pick a random move that preserves length
-                if (!bestMove) {
-                    const lengthPreservingMoves = possibleMoves.filter(m => m.snake.body.length === snake.body.length);
-                    if (lengthPreservingMoves.length > 0) {
-                        throwWarning(`${snake.id} is makeing length preserving move - not great`)
-                        bestMove = lengthPreservingMoves[0];
-                    } else if (possibleMoves.length > 0) {
-                        // Desperation move
-                        throwWarning(`${snake.id} is making desperation move - AHHH`)
-                        bestMove = possibleMoves[0];
-                    }
-                }
-
-                if (bestMove) {
-                    snake.currentDirection = bestMove.direction;
-                    commandString += `${snake.id} ${directions[bestMove.direction]};`;
-                    return
-                } else {
-                    commandString += `${snake.id} UP;`
-                    return
-                }
+            mySnakes.forEach((snake) => {
+                const chosenDirection = this.strategyManager.chooseDirection(snake, this.cells, this.snakeIdToDebug);
+                snake.currentDirection = chosenDirection;
+                commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
             });
             console.log(commandString);
 
