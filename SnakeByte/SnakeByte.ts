@@ -40,6 +40,10 @@ enum directionEnum {
 }
 
 const DIRECTION_LABELS: string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+const theoretical_time_limit = 50
+const additional_time_that_I_cannot_explain = 10
+const TURN_TIME_LIMIT_MS = theoretical_time_limit + additional_time_that_I_cannot_explain;
+const MS_RESERVED_FOR_BUFFER = 5;
 
 /**
  * ============================================================================
@@ -139,6 +143,7 @@ class Snake {
 
 class Snakes {
     public collection: Snake[] = [];
+    private allegianceById: Map<number, Allegiance> = new Map<number, Allegiance>();//todo:J tf is this
 
     private getMaybeById(id:number) {
         return this.collection.find((snake) => snake.id == id);
@@ -174,9 +179,25 @@ class Snakes {
         return false;
     }
 
-    public mine(mySnakeBotIds: number[]): Snake[] {
-        const mySnakeBotIdSet = new Set<number>(mySnakeBotIds);
-        return this.collection.filter((snake) => mySnakeBotIdSet.has(snake.id));
+    public registerAllegiance(snakeId: number, allegiance: Allegiance): void {
+        this.allegianceById.set(snakeId, allegiance); //todo:J all this allegiance crap can be removed, allegiances don't change
+    }
+
+    public getAllegianceById(snakeId: number): Allegiance {
+        const allegiance = this.allegianceById.get(snakeId);
+        if (allegiance === undefined) {
+            throw new Error(`Unknown snake id: ${snakeId}`);
+        }
+        return allegiance;
+    }
+
+    public mine(): Snake[] {
+        return this.collection.filter((snake) => snake.allegiance === Allegiance.mine);
+    }
+
+    public removeMissingById(aliveSnakeIds: number[]): void {
+        const aliveSnakeIdSet = new Set<number>(aliveSnakeIds);
+        this.collection = this.collection.filter((snake) => aliveSnakeIdSet.has(snake.id));
     }
 }
 
@@ -238,9 +259,38 @@ class GameState {
     public height: number = 0;
     public cells: Cells = new Cells();
     public snakes: Snakes = new Snakes();
-    public mySnakeBotIds: number[] = [];
     public snakeBotsPerPlayer: number = 0;
     public snakeIdToDebug: number = 6;
+}
+
+class TurnTimer {
+    private turnStartMs: number = 0;
+    private snakeTurnStartMs: number = 0;
+
+    public startTurn(): void {
+        this.turnStartMs = Date.now();
+        this.snakeTurnStartMs = this.turnStartMs;
+    }
+
+    public startSnakeTurn(): void {
+        this.snakeTurnStartMs = Date.now();
+    }
+
+    public msElapsedThisTurn(): number {
+        return Date.now() - this.turnStartMs;
+    }
+
+    public msElapsedThisSnakeTurn(): number {
+        return Date.now() - this.snakeTurnStartMs;
+    }
+
+    public msUntilTurnEnds(): number {
+        return TURN_TIME_LIMIT_MS - this.msElapsedThisTurn();
+    }
+
+    public msUntilBufferDeadline(): number {
+        return this.msUntilTurnEnds() - MS_RESERVED_FOR_BUFFER;
+    }
 }
 
 /**
@@ -269,7 +319,6 @@ class Simulator {
             !state.snakes.willThereBeASegmentHereInFrames(currentCell.coordinate, futureFrames, ignoredSnakeId)
         ) {
             if (currentCell.cellObject == CellObject.offGrid && currentCell.coordinate.y > 0) {
-                tempDebug(`cell ${currentCell.coordinate} explored falling off grid`);
                 return -1;
             }
             currentCell = state.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y + 1));
@@ -281,10 +330,13 @@ class Simulator {
     public findFloodFillMoveToEnergyCell(
         state: GameState,
         snake: Snake,
-        maxExploredStates: number = 100
+        turnTimer: TurnTimer,
+        maxExploredStates: number = 10000
     ): directionEnum | null {
         const isDebugSnake = snake.id === state.snakeIdToDebug;
         const energyCoordinates = state.cells.powerCells().map((cell) => cell.coordinate);
+        const mySnakeCount = Math.max(1, state.snakes.mine().length);
+        const msBudgetPerSnake = (TURN_TIME_LIMIT_MS - MS_RESERVED_FOR_BUFFER) / Math.max(1, mySnakeCount);
 
         type FloodNode = { snake: Snake, firstMove: directionEnum | null };
         const queue: FloodNode[] = [{ snake, firstMove: null }];
@@ -306,6 +358,11 @@ class Simulator {
             }
         };
 
+        const shouldStopFloodFill = () =>
+            visited.size >= maxExploredStates ||
+            turnTimer.msUntilBufferDeadline() <= 0 ||
+            turnTimer.msElapsedThisSnakeTurn() >= msBudgetPerSnake;
+
         const enqueueSortedCandidate = (
             candidates: { direction: directionEnum, movedSnake: Snake }[],
             candidate: { direction: directionEnum, movedSnake: Snake }
@@ -314,7 +371,7 @@ class Simulator {
             candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
         };
 
-        while (queue.length > 0 && visited.size < maxExploredStates) {
+        while (queue.length > 0 && !shouldStopFloodFill()) {
             const current = queue.shift()!;
 
             const candidates: { direction: directionEnum, movedSnake: Snake }[] = [];
@@ -327,7 +384,7 @@ class Simulator {
             }
 
             for (const candidate of candidates) {
-                if (visited.size >= maxExploredStates) {
+                if (shouldStopFloodFill()) {
                     break;
                 }
 
@@ -346,6 +403,7 @@ class Simulator {
         if (isDebugSnake) {
             tempDebug(`snake ${snake.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
         }
+        tempDebug(`snake ${snake.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
         return bestMove;
     }
 
@@ -393,7 +451,6 @@ class Simulator {
         }
 
         if (smallestDropDistance == -1) {
-            tempDebug(`snake ${snake.id} explored falling off grid from cell ${snake.head.print()}`);
             return null;
         }
 
@@ -447,7 +504,11 @@ class Simulator {
 class StrategyManager {
     constructor(private simulator: Simulator) {}
 
-    public chooseDirection(state: GameState, snake: Snake): directionEnum {
+    public chooseDirection(
+        state: GameState,
+        snake: Snake,
+        turnTimer: TurnTimer
+    ): directionEnum {
         const powerCells = state.cells.powerCells();
         if (powerCells.length === 0) {
             return directionEnum.up;
@@ -457,7 +518,11 @@ class StrategyManager {
             tempDebug(`snake ${snake.id} is being debugged`);
         }
 
-        const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(state, snake);
+        const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(
+            state,
+            snake,
+            turnTimer
+        );
         if (floodFillDirection !== null) {
             return floodFillDirection;
         }
@@ -533,10 +598,11 @@ class InputParser {
         state.snakeBotsPerPlayer = parseInt(readline());
         for (let i = 0; i < state.snakeBotsPerPlayer; i++) {
             const mySnakeBotId: number = parseInt(readline());
-            state.mySnakeBotIds.push(mySnakeBotId);
+            state.snakes.registerAllegiance(mySnakeBotId, Allegiance.mine);
         }
         for (let i = 0; i < state.snakeBotsPerPlayer; i++) {
-            parseInt(readline());
+            const oppSnakeBotId: number = parseInt(readline());
+            state.snakes.registerAllegiance(oppSnakeBotId, Allegiance.enemy1);
         }
     }
 
@@ -551,15 +617,18 @@ class InputParser {
         }
 
         const snakeBotCount: number = parseInt(readline());
+        const snakeIdsSeenThisTurn: number[] = [];
         for (let i = 0; i < snakeBotCount; i++) {
             const inputs: string[] = readline().split(' ');
             const snakeBotId: number = parseInt(inputs[0]);
             const body: string = inputs[1];
-            const allegiance: Allegiance = state.mySnakeBotIds.indexOf(snakeBotId) >= 0 ? Allegiance.mine : Allegiance.enemy1;
+            const allegiance: Allegiance = state.snakes.getAllegianceById(snakeBotId);
             const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
             state.snakes.upsert(snake);
+            snakeIdsSeenThisTurn.push(snakeBotId);
         }
-        return state.snakes.mine(state.mySnakeBotIds);
+        state.snakes.removeMissingById(snakeIdsSeenThisTurn);
+        return state.snakes.mine();
     }
 }
 
@@ -572,7 +641,8 @@ class TurnEngine {
     constructor(
         private state: GameState,
         private inputParser: InputParser,
-        private strategyManager: StrategyManager
+        private strategyManager: StrategyManager,
+        private turnTimer: TurnTimer
     ) {}
 
     public initialize(): void {
@@ -583,6 +653,7 @@ class TurnEngine {
         // noinspection InfiniteLoopJS
         while (true) {
             const mySnakes = this.inputParser.parseTurn(this.state);
+            this.turnTimer.startTurn();
             const commandString = this.buildCommandString(mySnakes);
             console.log(commandString);
         }
@@ -591,9 +662,16 @@ class TurnEngine {
     private buildCommandString(mySnakes: Snake[]): string {
         let commandString = '';
         mySnakes.forEach((snake) => {
-            const chosenDirection = this.strategyManager.chooseDirection(this.state, snake);
+            tempDebug(`snake ${snake.id} turn start (ms since turn began): ${this.turnTimer.msElapsedThisTurn()}`);
+            this.turnTimer.startSnakeTurn();
+            const chosenDirection = this.strategyManager.chooseDirection(
+                this.state,
+                snake,
+                this.turnTimer
+            );
             snake.currentDirection = chosenDirection;
             commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
+            tempDebug(`snake ${snake.id} turn end (ms since turn began): ${this.turnTimer.msElapsedThisTurn()}`);
         });
         return commandString;
     }
@@ -604,7 +682,13 @@ class GameManager {
     public simulator: Simulator = new Simulator();
     public strategyManager: StrategyManager = new StrategyManager(this.simulator);
     public inputParser: InputParser = new InputParser();
-    public turnEngine: TurnEngine = new TurnEngine(this.state, this.inputParser, this.strategyManager);
+    public turnTimer: TurnTimer = new TurnTimer();
+    public turnEngine: TurnEngine = new TurnEngine(
+        this.state,
+        this.inputParser,
+        this.strategyManager,
+        this.turnTimer
+    );
 
     public initialize() {
         this.turnEngine.initialize();
