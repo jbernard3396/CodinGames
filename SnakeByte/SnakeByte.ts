@@ -145,195 +145,6 @@ class Snake {
         copy.currentDirection = this.currentDirection;
         return copy;
     }
-
-    private stateKey(): string {
-        return this.body
-            .map(segment => `${segment.coordinate.x},${segment.coordinate.y}`)
-            .join('|');
-    }
-
-    public findFloodFillMoveToEnergyCell(maxExploredStates: number = 100): directionEnum | null {
-        const isDebugSnake = this.id === gameManager.snakeIdToDebug;
-        const energyCoordinates = gameManager.cells.powerCells().map((cell) => cell.coordinate);
-
-        type FloodNode = { snake: Snake, firstMove: directionEnum };
-        const queue: FloodNode[] = [];
-        const visited = new Set<string>();
-        let bestMove: directionEnum | null = null;
-        let bestLength = -1;
-        let bestDistance = Number.MAX_SAFE_INTEGER;
-
-        const updateBestMove = (snake: Snake, firstMove: directionEnum) => {
-            const length = snake.body.length;
-            const distanceToClosestEnergy = energyCoordinates.length > 0
-                ? snake.head.distance(snake.head.closest(energyCoordinates))
-                : Number.MAX_SAFE_INTEGER;
-
-            if (length > bestLength || (length === bestLength && distanceToClosestEnergy < bestDistance)) {
-                bestLength = length;
-                bestDistance = distanceToClosestEnergy;
-                bestMove = firstMove;
-            }
-        };
-
-        const initialCandidates: { direction: directionEnum, movedSnake: Snake }[] = [];
-        for (let i = 0; i < 4; i++) {
-            const direction = i as directionEnum;
-            const movedSnake = this.simulateMove(direction, this);
-            if (!movedSnake) {
-                continue;
-            }
-            initialCandidates.push({ direction, movedSnake });
-        }
-        initialCandidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
-
-        for (const candidate of initialCandidates) {
-            if (visited.size >= maxExploredStates) {
-                break;
-            }
-
-            const direction = candidate.direction;
-            const movedSnake = candidate.movedSnake;
-
-            const key = movedSnake.stateKey();
-            if (visited.has(key)) {
-                continue;
-            }
-            visited.add(key);
-            updateBestMove(movedSnake, direction);
-            queue.push({ snake: movedSnake, firstMove: direction });
-        }
-
-        let nextIndex = 0;
-        while (nextIndex < queue.length && visited.size < maxExploredStates) {
-            const current = queue[nextIndex];
-            nextIndex++;
-
-            const candidates: { movedSnake: Snake }[] = [];
-            for (let i = 0; i < 4; i++) {
-                const direction = i as directionEnum;
-                const movedSnake = current.snake.simulateMove(direction, current.snake);
-                if (!movedSnake) {
-                    continue;
-                }
-                candidates.push({ movedSnake });
-            }
-            candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
-
-            for (const candidate of candidates) {
-                if (visited.size >= maxExploredStates) {
-                    break;
-                }
-
-                const movedSnake = candidate.movedSnake;
-
-                const key = movedSnake.stateKey();
-                if (visited.has(key)) {
-                    continue;
-                }
-                visited.add(key);
-                updateBestMove(movedSnake, current.firstMove);
-                queue.push({ snake: movedSnake, firstMove: current.firstMove });
-            }
-        }
-
-        if (isDebugSnake) {
-            tempDebug(`snake ${this.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
-        }
-        return bestMove;
-    }
-
-    public positionsICanMoveTo(): { direction: directionEnum, snake: Snake }[] {
-        const possibleMoves: { direction: directionEnum, snake: Snake }[] = [];
-        for (let i = 0; i < 4; i++) {
-            const direction = i as directionEnum;
-            const possibleMove = this.simulateMove(direction, this);
-            if (possibleMove) {
-                possibleMoves.push({ direction, snake: possibleMove });
-            }
-        }
-        return possibleMoves;
-    }
-
-    //todo:J this should be somewhere else? maybe a static game simulator?
-    public simulateMove(direction: directionEnum, currentSnake: Snake): Snake | null {
-        const snake = currentSnake.deepCopy();
-        snake.simulatedFrame++;
-        const targetCoordinate = snake.head.getCoordinateInDirection(direction);
-        if (snake.body.length > 1 && targetCoordinate.equals(snake.body[1].coordinate)) {
-            return null;
-        }
-        const cellAbove = gameManager.cells.getMaybeByCoordinate(targetCoordinate);
-        const hasFutureSnakeSegment = gameManager.snakes.willThereBeASegmentHereInFrames(targetCoordinate, snake.simulatedFrame);
-        if ((cellAbove && cellAbove.cellObject == CellObject.platform) || hasFutureSnakeSegment) {
-            return snake.simulateDamage(snake);
-        }
-        const movedSnake = snake.iterateMovements(direction, snake);
-        return movedSnake.simulateFall(movedSnake);
-    }
-
-    public simulateFall(currentSnake: Snake): Snake {
-        const snake = currentSnake.deepCopy();
-        if (snake.body.length === 0) {
-            return snake;
-        }
-
-        let smallestDropDistance = Number.MAX_SAFE_INTEGER;
-        for (const segment of snake.body) {
-            const cell = gameManager.cells.getByCoordinate(segment.coordinate);
-            const dropDistance = cell.distanceDropToPlatform(snake.simulatedFrame, snake.id);
-
-            if (dropDistance < smallestDropDistance) {
-                smallestDropDistance = dropDistance;
-            }
-        }
-
-        if(smallestDropDistance == -1){ //snake fell off grid
-            tempDebug(`snake ${snake.id} explored falling off grid from cell ${snake.head.print()}`);
-            return null;
-        }
-
-        if (!Number.isFinite(smallestDropDistance) || smallestDropDistance <= 0) {
-            return snake;
-        }
-
-        for (const segment of snake.body) {
-            segment.coordinate = new Coordinate(
-                segment.coordinate.x,
-                segment.coordinate.y + smallestDropDistance
-            );
-        }
-
-        return snake;
-    }
-
-    public simulateDamage(currentSnake: Snake): Snake {
-        const snake = currentSnake.deepCopy();
-        snake.body.pop();
-        if (snake.body.length <= 2) {
-            return null;
-        }
-        return snake.simulateFall(snake);
-    }
-
-    public iterateMovements(direction: directionEnum, currentSnake: Snake): Snake {
-        const snake = currentSnake.deepCopy();
-        const newBody: SnakeSegment[] = [];
-        const newHeadCoordinate = snake.body[0].coordinate.getCoordinateInDirection(direction);
-        newBody.push(new SnakeSegment(newHeadCoordinate));
-
-        for (let i = 0; i < snake.body.length - 1; i++) {
-            newBody.push(new SnakeSegment(snake.body[i].coordinate));
-        }
-
-        //if there is a energy cell where the new head is, add the last segment as well
-        const energyCellEaten = gameManager.cells.powerCells().find(cell => cell.coordinate.equals(newHeadCoordinate));
-        if(energyCellEaten){
-            newBody.push(new SnakeSegment(snake.body[snake.body.length - 1].coordinate));
-        }
-
-        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
-    }
 }
 
 class Snakes {
@@ -381,25 +192,6 @@ class Cell {
     }
     public coordinate: Coordinate;
     public cellObject: CellObject;
-
-    public distanceDropToPlatform(futureFrames: number = 0, ignoredSnakeId: number | null = null):number {
-        //iterate down through cells until we reach a platform, return that distance
-        let distance = 0;
-        let currentCell: Cell = gameManager.cells.getByCoordinate(this.coordinate.getCoordinateInDirection(directionEnum.down));
-        while (
-            currentCell.cellObject != CellObject.platform &&
-            currentCell.cellObject != CellObject.energyCell &&
-            !gameManager.snakes.willThereBeASegmentHereInFrames(currentCell.coordinate, futureFrames, ignoredSnakeId)
-        ) {
-            if(currentCell.cellObject == CellObject.offGrid && currentCell.coordinate.y > 0){
-                tempDebug(`cell ${currentCell.coordinate} explored falling off grid`);
-                return -1
-            }
-            currentCell = gameManager.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y+1));
-            distance++;
-        }
-        return distance;
-    }
 }
 
 class Cells {
@@ -438,22 +230,6 @@ class Cells {
     public powerCells(): Cell[] {
         return this.collection.filter((cell) => cell.cellObject == CellObject.energyCell);
     }
-
-    public platforms(): Cell[] {
-        return this.collection.filter((cell) => cell.cellObject == CellObject.platform);
-    }
-
-    // public shortestPathBetweenCellsWithoutInterference(startCell: Cell, endCell: Cell): Coordinate[] {
-    //     var shortestPath: Coordinate[] = [];
-    //     //this is a recursive path finding function
-    //     //baseCase
-    //     if (startCell.coordinate.equals(endCell.coordinate)) {
-    //         return shortestPath;
-    //     }
-    //     //if the end cell is in an adjacent coordinate to a coordinate in the list
-    //
-    // }
-
 }
 
 /**
@@ -462,12 +238,212 @@ class Cells {
  * ============================================================================
  */
 class Simulator {
-    public findFloodFillMoveToEnergyCell(snake: Snake, maxExploredStates: number = 100): directionEnum | null {
-        return snake.findFloodFillMoveToEnergyCell(maxExploredStates);
+    constructor(private cells: Cells, private snakes: Snakes) {}
+
+    private stateKey(snake: Snake): string {
+        return snake.body
+            .map(segment => `${segment.coordinate.x},${segment.coordinate.y}`)
+            .join('|');
+    }
+
+    private distanceDropToPlatform(
+        startCoordinate: Coordinate,
+        futureFrames: number = 0,
+        ignoredSnakeId: number | null = null
+    ): number {
+        let distance = 0;
+        let currentCell: Cell = this.cells.getByCoordinate(startCoordinate.getCoordinateInDirection(directionEnum.down));
+        while (
+            currentCell.cellObject != CellObject.platform &&
+            currentCell.cellObject != CellObject.energyCell &&
+            !this.snakes.willThereBeASegmentHereInFrames(currentCell.coordinate, futureFrames, ignoredSnakeId)
+        ) {
+            if (currentCell.cellObject == CellObject.offGrid && currentCell.coordinate.y > 0) {
+                tempDebug(`cell ${currentCell.coordinate} explored falling off grid`);
+                return -1;
+            }
+            currentCell = this.cells.getByCoordinate(new Coordinate(currentCell.coordinate.x, currentCell.coordinate.y + 1));
+            distance++;
+        }
+        return distance;
+    }
+
+    public findFloodFillMoveToEnergyCell(
+        snake: Snake,
+        snakeIdToDebug: number,
+        maxExploredStates: number = 100
+    ): directionEnum | null {
+        const isDebugSnake = snake.id === snakeIdToDebug;
+        const energyCoordinates = this.cells.powerCells().map((cell) => cell.coordinate);
+
+        type FloodNode = { snake: Snake, firstMove: directionEnum };
+        const queue: FloodNode[] = [];
+        const visited = new Set<string>();
+        let bestMove: directionEnum | null = null;
+        let bestLength = -1;
+        let bestDistance = Number.MAX_SAFE_INTEGER;
+
+        const updateBestMove = (candidateSnake: Snake, firstMove: directionEnum) => {
+            const length = candidateSnake.body.length;
+            const distanceToClosestEnergy = energyCoordinates.length > 0
+                ? candidateSnake.head.distance(candidateSnake.head.closest(energyCoordinates))
+                : Number.MAX_SAFE_INTEGER;
+
+            if (length > bestLength || (length === bestLength && distanceToClosestEnergy < bestDistance)) {
+                bestLength = length;
+                bestDistance = distanceToClosestEnergy;
+                bestMove = firstMove;
+            }
+        };
+
+        const initialCandidates: { direction: directionEnum, movedSnake: Snake }[] = [];
+        for (let i = 0; i < 4; i++) {
+            const direction = i as directionEnum;
+            const movedSnake = this.simulateMove(snake, direction);
+            if (!movedSnake) {
+                continue;
+            }
+            initialCandidates.push({ direction, movedSnake });
+        }
+        initialCandidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
+
+        for (const candidate of initialCandidates) {
+            if (visited.size >= maxExploredStates) {
+                break;
+            }
+
+            const key = this.stateKey(candidate.movedSnake);
+            if (visited.has(key)) {
+                continue;
+            }
+            visited.add(key);
+            updateBestMove(candidate.movedSnake, candidate.direction);
+            queue.push({ snake: candidate.movedSnake, firstMove: candidate.direction });
+        }
+
+        let nextIndex = 0;
+        while (nextIndex < queue.length && visited.size < maxExploredStates) {
+            const current = queue[nextIndex];
+            nextIndex++;
+
+            const candidates: Snake[] = [];
+            for (let i = 0; i < 4; i++) {
+                const direction = i as directionEnum;
+                const movedSnake = this.simulateMove(current.snake, direction);
+                if (movedSnake) {
+                    candidates.push(movedSnake);
+                }
+            }
+            candidates.sort((a, b) => b.body.length - a.body.length);
+
+            for (const movedSnake of candidates) {
+                if (visited.size >= maxExploredStates) {
+                    break;
+                }
+
+                const key = this.stateKey(movedSnake);
+                if (visited.has(key)) {
+                    continue;
+                }
+                visited.add(key);
+                updateBestMove(movedSnake, current.firstMove);
+                queue.push({ snake: movedSnake, firstMove: current.firstMove });
+            }
+        }
+
+        if (isDebugSnake) {
+            tempDebug(`snake ${snake.id} flood fill evaluated states: ${visited.size}, best move: ${bestMove}`);
+        }
+        return bestMove;
     }
 
     public positionsICanMoveTo(snake: Snake): { direction: directionEnum, snake: Snake }[] {
-        return snake.positionsICanMoveTo();
+        const possibleMoves: { direction: directionEnum, snake: Snake }[] = [];
+        for (let i = 0; i < 4; i++) {
+            const direction = i as directionEnum;
+            const possibleMove = this.simulateMove(snake, direction);
+            if (possibleMove) {
+                possibleMoves.push({ direction, snake: possibleMove });
+            }
+        }
+        return possibleMoves;
+    }
+
+    public simulateMove(currentSnake: Snake, direction: directionEnum): Snake | null {
+        const snake = currentSnake.deepCopy();
+        snake.simulatedFrame++;
+        const targetCoordinate = snake.head.getCoordinateInDirection(direction);
+        if (snake.body.length > 1 && targetCoordinate.equals(snake.body[1].coordinate)) {
+            return null;
+        }
+        const targetCell = this.cells.getMaybeByCoordinate(targetCoordinate);
+        const hasFutureSnakeSegment = this.snakes.willThereBeASegmentHereInFrames(targetCoordinate, snake.simulatedFrame);
+        if ((targetCell && targetCell.cellObject == CellObject.platform) || hasFutureSnakeSegment) {
+            return this.simulateDamage(snake);
+        }
+        const movedSnake = this.iterateMovements(snake, direction);
+        return this.simulateFall(movedSnake);
+    }
+
+    public simulateFall(currentSnake: Snake): Snake | null {
+        const snake = currentSnake.deepCopy();
+        if (snake.body.length === 0) {
+            return snake;
+        }
+
+        let smallestDropDistance = Number.MAX_SAFE_INTEGER;
+        for (const segment of snake.body) {
+            const dropDistance = this.distanceDropToPlatform(segment.coordinate, snake.simulatedFrame, snake.id);
+
+            if (dropDistance < smallestDropDistance) {
+                smallestDropDistance = dropDistance;
+            }
+        }
+
+        if (smallestDropDistance == -1) {
+            tempDebug(`snake ${snake.id} explored falling off grid from cell ${snake.head.print()}`);
+            return null;
+        }
+
+        if (!Number.isFinite(smallestDropDistance) || smallestDropDistance <= 0) {
+            return snake;
+        }
+
+        for (const segment of snake.body) {
+            segment.coordinate = new Coordinate(
+                segment.coordinate.x,
+                segment.coordinate.y + smallestDropDistance
+            );
+        }
+
+        return snake;
+    }
+
+    public simulateDamage(currentSnake: Snake): Snake | null {
+        const snake = currentSnake.deepCopy();
+        snake.body.pop();
+        if (snake.body.length <= 2) {
+            return null;
+        }
+        return this.simulateFall(snake);
+    }
+
+    public iterateMovements(currentSnake: Snake, direction: directionEnum): Snake {
+        const snake = currentSnake.deepCopy();
+        const newBody: SnakeSegment[] = [];
+        const newHeadCoordinate = snake.body[0].coordinate.getCoordinateInDirection(direction);
+        newBody.push(new SnakeSegment(newHeadCoordinate));
+
+        for (let i = 0; i < snake.body.length - 1; i++) {
+            newBody.push(new SnakeSegment(snake.body[i].coordinate));
+        }
+
+        const energyCellEaten = this.cells.powerCells().find(cell => cell.coordinate.equals(newHeadCoordinate));
+        if (energyCellEaten) {
+            newBody.push(new SnakeSegment(snake.body[snake.body.length - 1].coordinate));
+        }
+
+        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
     }
 }
 
@@ -489,7 +465,7 @@ class StrategyManager {
             tempDebug(`snake ${snake.id} is being debugged`);
         }
 
-        const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(snake);
+        const floodFillDirection = this.simulator.findFloodFillMoveToEnergyCell(snake, snakeIdToDebug);
         if (floodFillDirection !== null) {
             return floodFillDirection;
         }
@@ -558,7 +534,7 @@ class GameManager {
     public mySnakeBotIds: number[] = [];
     public snakeBotsPerPlayer: number = 0;
     public snakeIdToDebug: number = 6;
-    public simulator: Simulator = new Simulator();
+    public simulator: Simulator = new Simulator(this.cells, this.snakes);
     public strategyManager: StrategyManager = new StrategyManager(this.simulator);
 
     public initialize() {
@@ -617,8 +593,6 @@ class GameManager {
                 commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
             });
             console.log(commandString);
-
-            
         }
     }
 }
