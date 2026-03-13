@@ -183,6 +183,11 @@ class Snakes {
         }
         return false;
     }
+
+    public mine(mySnakeBotIds: number[]): Snake[] {
+        const mySnakeBotIdSet = new Set<number>(mySnakeBotIds);
+        return this.collection.filter((snake) => mySnakeBotIdSet.has(snake.id));
+    }
 }
 
 class Cell {
@@ -536,6 +541,10 @@ function parseSnakeBody(rawBody: string): SnakeSegment[] {
 }
 
 class InputParser {
+    private parseCellObject(rawCell: string): CellObject {
+        return rawCell == '#' ? CellObject.platform : CellObject.empty;
+    }
+
     public initializeState(state: GameState): void {
         state.myId = parseInt(readline());
         state.width = parseInt(readline());
@@ -544,7 +553,7 @@ class InputParser {
         for (let y = 0; y < state.height; y++) {
             const row: string = readline();
             for (let x = 0; x < state.width; x++) {
-                const cellObject = row[x] == '#' ? CellObject.platform : CellObject.empty; //todo:J move this to parser
+                const cellObject = this.parseCellObject(row[x]);
                 state.cells.collection.push(new Cell(new Coordinate(x, y), cellObject));
             }
         }
@@ -570,7 +579,6 @@ class InputParser {
         }
 
         const snakeBotCount: number = parseInt(readline());
-        const mySnakes: Snake[] = [];
         for (let i = 0; i < snakeBotCount; i++) {
             const inputs: string[] = readline().split(' ');
             const snakeBotId: number = parseInt(inputs[0]);
@@ -578,11 +586,8 @@ class InputParser {
             const allegiance: Allegiance = state.mySnakeBotIds.includes(snakeBotId) ? Allegiance.mine : Allegiance.enemy1;
             const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
             state.snakes.upsert(snake);
-            if (allegiance === Allegiance.mine) {
-                mySnakes.push(state.snakes.collection.find(s => s.id === snakeBotId)!); //todo:J this is stupid we should just pull this from snakes.mine or whatever
-            }
         }
-        return mySnakes;
+        return state.snakes.mine(state.mySnakeBotIds);
     }
 }
 
