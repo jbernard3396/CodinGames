@@ -306,20 +306,25 @@ class Simulator {
             }
         };
 
-        let nextIndex = 0;
-        while (nextIndex < queue.length && visited.size < maxExploredStates) {
-            const current = queue[nextIndex];
-            nextIndex++;
+        const enqueueSortedCandidate = (
+            candidates: { direction: directionEnum, movedSnake: Snake }[],
+            candidate: { direction: directionEnum, movedSnake: Snake }
+        ) => {
+            candidates.push(candidate);
+            candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
+        };
+
+        while (queue.length > 0 && visited.size < maxExploredStates) {
+            const current = queue.shift()!;
 
             const candidates: { direction: directionEnum, movedSnake: Snake }[] = [];
             for (let i = 0; i < 4; i++) {
                 const direction = i as directionEnum;
                 const movedSnake = this.simulateMove(state, current.snake, direction);
                 if (movedSnake) {
-                    candidates.push({ direction, movedSnake });
+                    enqueueSortedCandidate(candidates, { direction, movedSnake });
                 }
             }
-            candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
 
             for (const candidate of candidates) {
                 if (visited.size >= maxExploredStates) {
