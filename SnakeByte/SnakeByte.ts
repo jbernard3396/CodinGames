@@ -286,8 +286,8 @@ class Simulator {
         const isDebugSnake = snake.id === state.snakeIdToDebug;
         const energyCoordinates = state.cells.powerCells().map((cell) => cell.coordinate);
 
-        type FloodNode = { snake: Snake, firstMove: directionEnum };
-        const queue: FloodNode[] = [];
+        type FloodNode = { snake: Snake, firstMove: directionEnum | null };
+        const queue: FloodNode[] = [{ snake, firstMove: null }];
         const visited = new Set<string>();
         let bestMove: directionEnum | null = null;
         let bestLength = -1;
@@ -306,58 +306,35 @@ class Simulator {
             }
         };
 
-        const initialCandidates: { direction: directionEnum, movedSnake: Snake }[] = [];
-        for (let i = 0; i < 4; i++) {
-            const direction = i as directionEnum;
-            const movedSnake = this.simulateMove(state, snake, direction);
-            if (!movedSnake) {
-                continue;
-            }
-            initialCandidates.push({ direction, movedSnake });
-        }
-        initialCandidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
-
-        for (const candidate of initialCandidates) {
-            if (visited.size >= maxExploredStates) {
-                break;
-            }
-
-            const key = this.stateKey(candidate.movedSnake);
-            if (visited.has(key)) {
-                continue;
-            }
-            visited.add(key);
-            updateBestMove(candidate.movedSnake, candidate.direction);
-            queue.push({ snake: candidate.movedSnake, firstMove: candidate.direction });
-        }
-
         let nextIndex = 0;
         while (nextIndex < queue.length && visited.size < maxExploredStates) {
             const current = queue[nextIndex];
             nextIndex++;
 
-            const candidates: Snake[] = [];
+            const candidates: { direction: directionEnum, movedSnake: Snake }[] = [];
             for (let i = 0; i < 4; i++) {
                 const direction = i as directionEnum;
                 const movedSnake = this.simulateMove(state, current.snake, direction);
                 if (movedSnake) {
-                    candidates.push(movedSnake);
+                    candidates.push({ direction, movedSnake });
                 }
             }
-            candidates.sort((a, b) => b.body.length - a.body.length);
+            candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
 
-            for (const movedSnake of candidates) {
+            for (const candidate of candidates) {
                 if (visited.size >= maxExploredStates) {
                     break;
                 }
 
-                const key = this.stateKey(movedSnake);
+                const key = this.stateKey(candidate.movedSnake);
                 if (visited.has(key)) {
                     continue;
                 }
+
+                const firstMove = current.firstMove === null ? candidate.direction : current.firstMove;
                 visited.add(key);
-                updateBestMove(movedSnake, current.firstMove);
-                queue.push({ snake: movedSnake, firstMove: current.firstMove });
+                updateBestMove(candidate.movedSnake, firstMove);
+                queue.push({ snake: candidate.movedSnake, firstMove });
             }
         }
 
