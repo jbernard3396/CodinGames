@@ -1,4 +1,17 @@
 // noinspection DuplicatedCode
+/**
+ * Future Goals
+ * Big
+ *  1. Optimize flood fill
+ *  2. Coordinate Bots
+ *  3. goal seek past first cell? probably goal seek so many steps pruning for length and distance to cells, and then take the longest and closest - really need coord to do this
+ *
+ * Small
+ *  1. energy cells are collected pre fall? - combine this with 3 of above?
+ *  2. don't run into tails if the snake head is adjacent to an energy cell
+ *
+ *
+ */
 
 /**
 Helpers
@@ -150,12 +163,19 @@ class Snake {
     }
 
     public findFloodFillMoveToEnergyCell(maxExploredStates: number = 100): directionEnum | null {
+        const isDebugSnake = this.id === gameManager.snakeIdToDebug;
         if (this.headIsOnEnergyCell()) {
+            if (isDebugSnake) {
+                tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (already on energy cell)`);
+            }
             return null;
         }
 
         const energyCoordinates = gameManager.cells.powerCells().map((cell) => cell.coordinate);
         if (energyCoordinates.length === 0) {
+            if (isDebugSnake) {
+                tempDebug(`snake ${this.id} flood fill found path to energy cell: no (no energy cells available)`);
+            }
             return null;
         }
 
@@ -163,23 +183,35 @@ class Snake {
         const queue: FloodNode[] = [];
         const visited = new Set<string>();
         let bestMove: directionEnum | null = null;
+        let bestLength = -1;
         let bestDistance = Number.MAX_SAFE_INTEGER;
 
         const updateBestMove = (snake: Snake, firstMove: directionEnum) => {
+            const length = snake.body.length;
             const closestEnergyCoordinate = snake.head.closest(energyCoordinates);
             const distanceToClosestEnergy = snake.head.distance(closestEnergyCoordinate);
-            if (distanceToClosestEnergy < bestDistance) {
+
+            if (length > bestLength || (length === bestLength && distanceToClosestEnergy < bestDistance)) {
+                bestLength = length;
                 bestDistance = distanceToClosestEnergy;
                 bestMove = firstMove;
             }
         };
 
+        const initialCandidates: { direction: directionEnum, movedSnake: Snake }[] = [];
         for (let i = 0; i < 4; i++) {
             const direction = i as directionEnum;
             const movedSnake = this.simulateMove(direction, this);
             if (!movedSnake) {
                 continue;
             }
+            initialCandidates.push({ direction, movedSnake });
+        }
+        initialCandidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
+
+        for (const candidate of initialCandidates) {
+            const direction = candidate.direction;
+            const movedSnake = candidate.movedSnake;
 
             const key = movedSnake.stateKey();
             if (visited.has(key)) {
@@ -188,6 +220,9 @@ class Snake {
             visited.add(key);
 
             if (movedSnake.headIsOnEnergyCell()) {
+                if (isDebugSnake) {
+                    tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (first move ${direction})`);
+                }
                 return direction;
             }
 
@@ -200,12 +235,19 @@ class Snake {
             const current = queue[nextIndex];
             nextIndex++;
 
+            const candidates: { movedSnake: Snake }[] = [];
             for (let i = 0; i < 4; i++) {
                 const direction = i as directionEnum;
                 const movedSnake = current.snake.simulateMove(direction, current.snake);
                 if (!movedSnake) {
                     continue;
                 }
+                candidates.push({ movedSnake });
+            }
+            candidates.sort((a, b) => b.movedSnake.body.length - a.movedSnake.body.length);
+
+            for (const candidate of candidates) {
+                const movedSnake = candidate.movedSnake;
 
                 const key = movedSnake.stateKey();
                 if (visited.has(key)) {
@@ -214,6 +256,9 @@ class Snake {
                 visited.add(key);
 
                 if (movedSnake.headIsOnEnergyCell()) {
+                    if (isDebugSnake) {
+                        tempDebug(`snake ${this.id} flood fill found path to energy cell: yes (first move ${current.firstMove})`);
+                    }
                     return current.firstMove;
                 }
 
@@ -222,6 +267,9 @@ class Snake {
             }
         }
 
+        if (isDebugSnake) {
+            tempDebug(`snake ${this.id} flood fill found path to energy cell: no, ran out of states: ${visited.size}`);
+        }
         return bestMove;
     }
 
@@ -237,18 +285,16 @@ class Snake {
         return possibleMoves;
     }
 
-    //todo:J super afraid of editing the snakes in place, lets make sure these are deep copies or whatever
     //todo:J this should be somewhere else? maybe a static game simulator?
     public simulateMove(direction: directionEnum, currentSnake: Snake): Snake | null {
         const snake = currentSnake.deepCopy();
-        snake.simulatedFrame += 1;
+        snake.simulatedFrame++;
         const targetCoordinate = snake.head.getCoordinateInDirection(direction);
         if (snake.body.length > 1 && targetCoordinate.equals(snake.body[1].coordinate)) {
             return null;
         }
         const cellAbove = gameManager.cells.getMaybeByCoordinate(targetCoordinate);
-        const futureFrame = snake.simulatedFrame + 1;
-        const hasFutureSnakeSegment = gameManager.snakes.willThereBeASegmentHereInFrames(targetCoordinate, futureFrame);
+        const hasFutureSnakeSegment = gameManager.snakes.willThereBeASegmentHereInFrames(targetCoordinate, snake.simulatedFrame);
         if ((cellAbove && cellAbove.cellObject == CellObject.platform) || hasFutureSnakeSegment) {
             return snake.simulateDamage(snake);
         }
@@ -265,7 +311,7 @@ class Snake {
         let smallestDropDistance = Number.MAX_SAFE_INTEGER;
         for (const segment of snake.body) {
             const cell = gameManager.cells.getByCoordinate(segment.coordinate);
-            const dropDistance = cell.distanceDropToPlatform(); //todo:J investigate for OBO
+            const dropDistance = cell.distanceDropToPlatform(snake.simulatedFrame, snake.id); //todo:J investigate for OBO
 
             if (dropDistance < smallestDropDistance) {
                 smallestDropDistance = dropDistance;
@@ -293,7 +339,6 @@ class Snake {
 
     public simulateDamage(currentSnake: Snake): Snake {
         const snake = currentSnake.deepCopy();
-        //remove the last segment from the snake and then simulate a fall
         //todo:J if I have three segments, die instead
         snake.body.pop();
         if (snake.body.length <= 2) {
@@ -348,9 +393,12 @@ class Snakes {
         snakeToUpdate.update(snake);
     }
 
-    public willThereBeASegmentHereInFrames(coordinate: Coordinate, futureFrames: number): boolean {
+    public willThereBeASegmentHereInFrames(coordinate: Coordinate, futureFrames: number, ignoredSnakeId: number | null = null): boolean {
         const normalizedFutureFrames = Math.max(0, futureFrames);
         for (const snake of this.collection) {
+            if (ignoredSnakeId !== null && snake.id === ignoredSnakeId) {
+                continue;
+            }
             for (let i = 0; i < snake.body.length; i++) {
                 const segment = snake.body[i];
                 if (!segment.coordinate.equals(coordinate)) {
@@ -375,15 +423,16 @@ class Cell {
     public coordinate: Coordinate;
     public cellObject: CellObject;
 
-    public distanceDropToPlatform():number {
+    public distanceDropToPlatform(futureFrames: number = 0, ignoredSnakeId: number | null = null):number {
         //iterate down through cells until we reach a platform, return that distance
         let distance = 0;
         let currentCell: Cell = gameManager.cells.getByCoordinate(this.coordinate.getCoordinateInDirection(directionEnum.down));
         while (
             currentCell.cellObject != CellObject.platform &&
-            currentCell.cellObject != CellObject.energyCell
+            currentCell.cellObject != CellObject.energyCell &&
+            !gameManager.snakes.willThereBeASegmentHereInFrames(currentCell.coordinate, futureFrames, ignoredSnakeId)
         ) {
-            if(currentCell.cellObject == CellObject.offGrid){
+            if(currentCell.cellObject == CellObject.offGrid && currentCell.coordinate.y > 0){
                 tempDebug(`cell ${currentCell.coordinate} explored falling off grid`);
                 return -1
             }
@@ -469,6 +518,7 @@ class GameManager {
     public snakes: Snakes = new Snakes();
     public mySnakeBotIds: number[] = [];
     public snakeBotsPerPlayer: number = 0;
+    public snakeIdToDebug: number = 6;
 
     public initialize() {
         this.myId = parseInt(readline());
@@ -524,13 +574,13 @@ class GameManager {
 
 
             mySnakes.forEach((snake) => { //todo:J move this to a strategy manager?
-                // if (snake.id != 1){
-                //     return;
-                // }
                 const powerCells = this.cells.powerCells();
                 if (powerCells.length === 0) {
                     commandString += `${snake.id} UP;`
                     return;
+                }
+                if(snake.id === this.snakeIdToDebug){
+                    tempDebug(`snake ${snake.id} is being debugged`)
                 }
 
                 const floodFillDirection = snake.findFloodFillMoveToEnergyCell();
@@ -541,9 +591,7 @@ class GameManager {
                 }
 
                 const closestPowerCell:Coordinate = snake.head.closest(powerCells.map(pc => pc.coordinate));
-                // tempDebug(`closest power cell to snake ${snake.id}: ${closestPowerCell.print()}`)
                 const currentDistance:number = snake.head.distance(closestPowerCell);
-                // tempDebug(`distance: ${currentDistance.toString()}`)
 
                 const possibleMoves = snake.positionsICanMoveTo();
                 
@@ -552,10 +600,6 @@ class GameManager {
 
                 // 1. Try to find a move that gets us closer
                 for (const move of possibleMoves) {
-                    // tempDebug(`checking move ${move.direction} for snake ${snake.id}`)
-                    // tempDebug(`new head: ${move.snake.head.print()}`)
-                    // tempDebug(`closest power cell: ${closestPowerCell.print()}`)
-                    // tempDebug(`distance: ${move.snake.head.distance(closestPowerCell)}`)
                     const newDistance = move.snake.head.distance(closestPowerCell);
                     if (newDistance < minDistance) {
                         minDistance = newDistance;
