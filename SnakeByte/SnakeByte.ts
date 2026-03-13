@@ -535,73 +535,105 @@ function parseSnakeBody(rawBody: string): SnakeSegment[] {
     return segments;
 }
 
+class InputParser {
+    public initializeState(state: GameState): void {
+        state.myId = parseInt(readline());
+        state.width = parseInt(readline());
+        state.height = parseInt(readline());
+
+        for (let y = 0; y < state.height; y++) {
+            const row: string = readline();
+            for (let x = 0; x < state.width; x++) {
+                const cellObject = row[x] == '#' ? CellObject.platform : CellObject.empty; //todo:J move this to parser
+                state.cells.collection.push(new Cell(new Coordinate(x, y), cellObject));
+            }
+        }
+
+        state.snakeBotsPerPlayer = parseInt(readline());
+        for (let i = 0; i < state.snakeBotsPerPlayer; i++) {
+            const mySnakeBotId: number = parseInt(readline());
+            state.mySnakeBotIds.push(mySnakeBotId);
+        }
+        for (let i = 0; i < state.snakeBotsPerPlayer; i++) {
+            parseInt(readline());
+        }
+    }
+
+    public parseTurn(state: GameState): Snake[] {
+        const powerSourceCount: number = parseInt(readline());
+        state.cells.clearPowerCells();
+        for (let i = 0; i < powerSourceCount; i++) {
+            const inputs: string[] = readline().split(' ');
+            const x: number = parseInt(inputs[0]);
+            const y: number = parseInt(inputs[1]);
+            state.cells.markPowerCell(new Coordinate(x, y));
+        }
+
+        const snakeBotCount: number = parseInt(readline());
+        const mySnakes: Snake[] = [];
+        for (let i = 0; i < snakeBotCount; i++) {
+            const inputs: string[] = readline().split(' ');
+            const snakeBotId: number = parseInt(inputs[0]);
+            const body: string = inputs[1];
+            const allegiance: Allegiance = state.mySnakeBotIds.includes(snakeBotId) ? Allegiance.mine : Allegiance.enemy1;
+            const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
+            state.snakes.upsert(snake);
+            if (allegiance === Allegiance.mine) {
+                mySnakes.push(state.snakes.collection.find(s => s.id === snakeBotId)!); //todo:J this is stupid we should just pull this from snakes.mine or whatever
+            }
+        }
+        return mySnakes;
+    }
+}
+
 /**
  * ============================================================================
  * Application
  * ============================================================================
  */
+class TurnEngine {
+    constructor(
+        private state: GameState,
+        private inputParser: InputParser,
+        private strategyManager: StrategyManager
+    ) {}
+
+    public initialize(): void {
+        this.inputParser.initializeState(this.state);
+    }
+
+    public run(): void {
+        while (true) {
+            const mySnakes = this.inputParser.parseTurn(this.state);
+            const commandString = this.buildCommandString(mySnakes);
+            console.log(commandString);
+        }
+    }
+
+    private buildCommandString(mySnakes: Snake[]): string {
+        let commandString = '';
+        mySnakes.forEach((snake) => {
+            const chosenDirection = this.strategyManager.chooseDirection(this.state, snake);
+            snake.currentDirection = chosenDirection;
+            commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
+        });
+        return commandString;
+    }
+}
+
 class GameManager {
     public state: GameState = new GameState();
     public simulator: Simulator = new Simulator();
     public strategyManager: StrategyManager = new StrategyManager(this.simulator);
+    public inputParser: InputParser = new InputParser();
+    public turnEngine: TurnEngine = new TurnEngine(this.state, this.inputParser, this.strategyManager);
 
     public initialize() {
-        this.state.myId = parseInt(readline());
-        this.state.width = parseInt(readline());
-        this.state.height = parseInt(readline());
-
-        for (let y = 0; y < this.state.height; y++) {
-            const row: string = readline();
-            for (let x = 0; x < this.state.width; x++) {
-                const cellObject = row[x] == '#' ? CellObject.platform : CellObject.empty; //todo:J move this to parser
-                this.state.cells.collection.push(new Cell(new Coordinate(x, y), cellObject));
-            }
-        }
-
-        this.state.snakeBotsPerPlayer = parseInt(readline());
-        for (let i = 0; i < this.state.snakeBotsPerPlayer; i++) {
-            const mySnakeBotId: number = parseInt(readline());
-            this.state.mySnakeBotIds.push(mySnakeBotId);
-        }
-        for (let i = 0; i < this.state.snakeBotsPerPlayer; i++) {
-            const oppSnakeBotId: number = parseInt(readline());
-        }
+        this.turnEngine.initialize();
     }
 
     public runGameLoop() {
-        while (true) {
-            var commandString: string = "";
-            const powerSourceCount: number = parseInt(readline());
-            this.state.cells.clearPowerCells();
-            for (let i = 0; i < powerSourceCount; i++) {
-                var inputs: string[] = readline().split(' ');
-                const x: number = parseInt(inputs[0]);
-                const y: number = parseInt(inputs[1]);
-                this.state.cells.markPowerCell(new Coordinate(x, y));
-            }
-
-            const snakeBotCount: number = parseInt(readline());
-            const mySnakes: Snake[] = [];
-            for (let i = 0; i < snakeBotCount; i++) {
-                var inputs: string[] = readline().split(' ');
-                const snakeBotId: number = parseInt(inputs[0]);
-                const body: string = inputs[1];
-                const allegiance: Allegiance = this.state.mySnakeBotIds.includes(snakeBotId) ? Allegiance.mine : Allegiance.enemy1;
-                const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
-                this.state.snakes.upsert(snake);
-                if (allegiance === Allegiance.mine) {
-                    mySnakes.push(this.state.snakes.collection.find(s => s.id === snakeBotId)!); //todo:J this is stupid we should just pull this from snakes.mine or whatever
-                }
-            }
-
-
-            mySnakes.forEach((snake) => {
-                const chosenDirection = this.strategyManager.chooseDirection(this.state, snake);
-                snake.currentDirection = chosenDirection;
-                commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
-            });
-            console.log(commandString);
-        }
+        this.turnEngine.run();
     }
 }
 
