@@ -285,7 +285,7 @@ class Snake {
         let smallestDropDistance = Number.MAX_SAFE_INTEGER;
         for (const segment of snake.body) {
             const cell = gameManager.cells.getByCoordinate(segment.coordinate);
-            const dropDistance = cell.distanceDropToPlatform(snake.simulatedFrame, snake.id); //todo:J investigate for OBO
+            const dropDistance = cell.distanceDropToPlatform(snake.simulatedFrame, snake.id);
 
             if (dropDistance < smallestDropDistance) {
                 smallestDropDistance = dropDistance;
@@ -320,7 +320,6 @@ class Snake {
         return snake.simulateFall(snake);
     }
 
-    //todo:J holy cow what is THIS function called
     public iterateMovements(direction: directionEnum, currentSnake: Snake): Snake {
         const snake = currentSnake.deepCopy();
         const newBody: SnakeSegment[] = [];
@@ -489,7 +488,7 @@ class GameManager {
         this.width = parseInt(readline());
         this.height = parseInt(readline());
 
-        for (let y = 0; y < this.height; y++) { //todo:J we actually need a bunch more cells to properly handle going off grid.
+        for (let y = 0; y < this.height; y++) {
             const row: string = readline();
             for (let x = 0; x < this.width; x++) {
                 const cellObject = row[x] == '#' ? CellObject.platform : CellObject.empty;
