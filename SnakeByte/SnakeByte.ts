@@ -51,7 +51,7 @@ const DIRECTION_LABELS: string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
 const theoretical_time_limit = 50
 const additional_time_that_I_cannot_explain = 10
 const TURN_TIME_LIMIT_MS = theoretical_time_limit + additional_time_that_I_cannot_explain;
-const MS_RESERVED_FOR_BUFFER = 5;
+const MS_RESERVED_FOR_BUFFER = 10;
 
 /**
  * ============================================================================
@@ -720,6 +720,42 @@ class InputParser {
     }
 }
 
+class GameSummary {
+    private turnsProcessed: number = 0;
+    private totalFloodFillStatesVisitedAcrossGame: number = 0;
+    private totalSnakesProcessedAcrossGame: number = 0;
+    private currentTurnAverageStatesPerSnake: number = 0; //todo:J bad name
+
+    public recordTurn(mySnakes: Snake[]): void {
+        const totalFloodFillStatesVisitedThisTurn = mySnakes.reduce(
+            (sum, snake) => sum + snake.snakeMessage.floodFillStatesVisited,
+            0
+        );
+
+        this.turnsProcessed++;
+        this.totalFloodFillStatesVisitedAcrossGame += totalFloodFillStatesVisitedThisTurn;
+        this.totalSnakesProcessedAcrossGame += mySnakes.length;
+        this.currentTurnAverageStatesPerSnake = this.totalSnakesProcessedAcrossGame > 0
+            ? this.totalFloodFillStatesVisitedAcrossGame / this.totalSnakesProcessedAcrossGame
+            : 0;
+    }
+
+    public getAverageStatesVisitedPerTurnAcrossGame(): number {
+        if (this.turnsProcessed <= 0) {
+            return 0;
+        }
+        return this.totalFloodFillStatesVisitedAcrossGame / this.turnsProcessed;
+    }
+
+    public getMessage(): string {
+        return (
+            `game summary: ` +
+            `avg flood-fill states per snake (game)=${this.currentTurnAverageStatesPerSnake.toFixed(2)}, ` +
+            `avg flood-fill states per turn (game)=${this.getAverageStatesVisitedPerTurnAcrossGame().toFixed(2)}`
+        );
+    }
+}
+
 /**
  * ============================================================================
  * Application
@@ -730,7 +766,8 @@ class TurnEngine {
         private state: GameState,
         private inputParser: InputParser,
         private strategyManager: StrategyManager,
-        private turnTimer: TurnTimer
+        private turnTimer: TurnTimer,
+        private gameSummary: GameSummary
     ) {}
 
     public initialize(): void {
@@ -772,6 +809,9 @@ class TurnEngine {
             commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
             tempDebug(snake.snakeMessage.getMessage());
         });
+        this.gameSummary.recordTurn(mySnakes);
+        tempDebug(this.gameSummary.getMessage());
+
         return commandString;
     }
 }
@@ -782,11 +822,13 @@ class GameManager {
     public strategyManager: StrategyManager = new StrategyManager(this.simulator);
     public inputParser: InputParser = new InputParser();
     public turnTimer: TurnTimer = new TurnTimer();
+    public gameSummary: GameSummary = new GameSummary();
     public turnEngine: TurnEngine = new TurnEngine(
         this.state,
         this.inputParser,
         this.strategyManager,
-        this.turnTimer
+        this.turnTimer,
+        this.gameSummary
     );
 
     public initialize() {
