@@ -1,14 +1,12 @@
 // noinspection DuplicatedCode
 
+declare function readline(): string;
+
 /**
  * ============================================================================
  * Helpers
  * ============================================================================
  */
-function debug(message: string) {
-    console.error('DEBUG: ' + message);
-}
-
 function throwWarning(message: string) {
     console.error(`WARNING: ${message}`);
 }
@@ -67,14 +65,6 @@ class Coordinate {
         const diffX = other.x - this.x;
         const diffY = other.y - this.y;
         return Math.abs(diffX) + Math.abs(diffY);
-    }
-    public adjacentCoordinates(): Coordinate[] {
-        return [
-            this.getCoordinateInDirection(directionEnum.right),
-            this.getCoordinateInDirection(directionEnum.left),
-            this.getCoordinateInDirection(directionEnum.up),
-            this.getCoordinateInDirection(directionEnum.down)
-        ];
     }
     public getCoordinateInDirection(direction:directionEnum):Coordinate {
         switch(direction){
@@ -510,10 +500,10 @@ class StrategyManager {
         if (!bestMove) {
             const lengthPreservingMoves = possibleMoves.filter(m => m.snake.body.length === snake.body.length);
             if (lengthPreservingMoves.length > 0) {
-                throwWarning(`${snake.id} is makeing length preserving move - not great`);
+                throwWarning(`${snake.id} is making length preserving move - not great`);
                 bestMove = lengthPreservingMoves[0];
             } else if (possibleMoves.length > 0) {
-                throwWarning(`${snake.id} is making desperation move - AHHH`);
+                throwWarning(`${snake.id} is making desperation move - scary!`);
                 bestMove = possibleMoves[0];
             }
         }
@@ -583,7 +573,7 @@ class InputParser {
             const inputs: string[] = readline().split(' ');
             const snakeBotId: number = parseInt(inputs[0]);
             const body: string = inputs[1];
-            const allegiance: Allegiance = state.mySnakeBotIds.includes(snakeBotId) ? Allegiance.mine : Allegiance.enemy1;
+            const allegiance: Allegiance = state.mySnakeBotIds.indexOf(snakeBotId) >= 0 ? Allegiance.mine : Allegiance.enemy1;
             const snake: Snake = new Snake(snakeBotId, allegiance, parseSnakeBody(body));
             state.snakes.upsert(snake);
         }
@@ -608,6 +598,7 @@ class TurnEngine {
     }
 
     public run(): void {
+        // noinspection InfiniteLoopJS
         while (true) {
             const mySnakes = this.inputParser.parseTurn(this.state);
             const commandString = this.buildCommandString(mySnakes);
