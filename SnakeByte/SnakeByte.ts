@@ -482,7 +482,8 @@ class Simulator {
         snake: Snake,
         turnTimer: TurnTimer,
         maxSnakeBudgetMs: number,
-        maxExploredStates: number = 10000
+        maxExploredStates: number = 10000,
+        reservedHeadTargetIndexes: Set<number> | null = null
     ): directionEnum | null {
         const energyCoordinates = state.cells.powerCells().map((cell) => cell.coordinate);
         snake.snakeMessage.floodFillBudgetMs = maxSnakeBudgetMs;
@@ -530,7 +531,7 @@ class Simulator {
             const candidates: { direction: directionEnum, movedSnake: Snake }[] = [];
             for (let i = 0; i < 4; i++) {
                 const direction = i as directionEnum;
-                const movedSnake = this.simulateMove(state, current.snake, direction);
+                const movedSnake = this.simulateMove(state, current.snake, direction, reservedHeadTargetIndexes);
                 if (movedSnake) {
                     enqueueSortedCandidate(candidates, { direction, movedSnake });
                 }
@@ -569,11 +570,15 @@ class Simulator {
         return bestMove;
     }
 
-    public positionsICanMoveTo(state: GameState, snake: Snake): { direction: directionEnum, snake: Snake }[] {
+    public positionsICanMoveTo(
+        state: GameState,
+        snake: Snake,
+        reservedHeadTargetIndexes: Set<number> | null = null
+    ): { direction: directionEnum, snake: Snake }[] {
         const possibleMoves: { direction: directionEnum, snake: Snake }[] = [];
         for (let i = 0; i < 4; i++) {
             const direction = i as directionEnum;
-            const possibleMove = this.simulateMove(state, snake, direction);
+            const possibleMove = this.simulateMove(state, snake, direction, reservedHeadTargetIndexes);
             if (possibleMove) {
                 possibleMoves.push({ direction, snake: possibleMove });
             }
@@ -581,10 +586,24 @@ class Simulator {
         return possibleMoves;
     }
 
-    public simulateMove(state: GameState, currentSnake: Snake, direction: directionEnum): Snake | null {
+    public simulateMove(
+        state: GameState,
+        currentSnake: Snake,
+        direction: directionEnum,
+        reservedHeadTargetIndexes: Set<number> | null = null
+    ): Snake | null {
+        const isFirstSimulatedMove = currentSnake.simulatedFrame === 0;
         const snake = currentSnake.deepCopy();
         snake.simulatedFrame++;
         const targetCoordinate = snake.head.getCoordinateInDirection(direction);
+
+        if (isFirstSimulatedMove && reservedHeadTargetIndexes) {
+            const targetIndex = state.cells.getIndexByCoordinate(targetCoordinate);
+            if (targetIndex >= 0 && reservedHeadTargetIndexes.has(targetIndex)) {
+                return null;
+            }
+        }
+
         if (snake.body.length > 1 && targetCoordinate.equals(snake.body[1].coordinate)) {
             return null;
         }
@@ -669,10 +688,16 @@ class StrategyManager {
         state: GameState,
         snake: Snake,
         turnTimer: TurnTimer,
-        maxSnakeBudgetMs: number
+        maxSnakeBudgetMs: number,
+        reservedHeadTargetIndexes: Set<number>
     ): directionEnum {
         const powerCells = state.cells.powerCells();
+        const possibleMoves = this.simulator.positionsICanMoveTo(state, snake, reservedHeadTargetIndexes);
+
         if (powerCells.length === 0) {
+            if (possibleMoves.length > 0) {
+                return possibleMoves[0].direction;
+            }
             return directionEnum.up;
         }
 
@@ -680,7 +705,9 @@ class StrategyManager {
             state,
             snake,
             turnTimer,
-            maxSnakeBudgetMs
+            maxSnakeBudgetMs,
+            10000,
+            reservedHeadTargetIndexes
         );
         if (floodFillDirection !== null) {
             return floodFillDirection;
@@ -688,8 +715,6 @@ class StrategyManager {
 
         const closestPowerCell: Coordinate = snake.head.closest(powerCells.map(pc => pc.coordinate));
         const currentDistance: number = snake.head.distance(closestPowerCell);
-
-        const possibleMoves = this.simulator.positionsICanMoveTo(state, snake);
         let bestMove: { direction: directionEnum, snake: Snake } | null = null;
         let minDistance = currentDistance;
 
@@ -858,6 +883,7 @@ class TurnEngine {
 
     private buildCommandString(mySnakes: Snake[]): string {
         let commandString = '';
+        const reservedHeadTargetIndexes = new Set<number>();
         mySnakes.forEach((snake) => {
             snake.moveChosen = false;
             snake.snakeMessage.reset();
@@ -872,12 +898,20 @@ class TurnEngine {
                 this.state,
                 snake,
                 this.turnTimer,
-                maxSnakeBudgetMs
+                maxSnakeBudgetMs,
+                reservedHeadTargetIndexes
             );
             snake.currentDirection = chosenDirection;
             snake.moveChosen = true;
             snake.snakeMessage.chosenDirection = chosenDirection;
             snake.snakeMessage.turnEndMs = this.turnTimer.msElapsedThisTurn();
+
+            const targetCoordinate = snake.head.getCoordinateInDirection(chosenDirection);
+            const targetIndex = this.state.cells.getIndexByCoordinate(targetCoordinate);
+            if (targetIndex >= 0) {
+                reservedHeadTargetIndexes.add(targetIndex);
+            }
+
             commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
             tempDebug(snake.snakeMessage.getMessage());
         });
