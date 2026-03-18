@@ -202,6 +202,7 @@ class Snake {
     public isCopy: boolean;
     public simulatedFrame: number;
     public moveChosen: boolean;
+    public headAdjacentToEnergyCell: boolean = false;
     public snakeMessage: SnakeMessage = new SnakeMessage();
     public currentDirection: directionEnum = directionEnum.up;
     public get head(): Coordinate {
@@ -215,6 +216,7 @@ class Snake {
         this.isCopy = snake.isCopy;
         this.simulatedFrame = snake.simulatedFrame;
         this.moveChosen = snake.moveChosen;
+        this.headAdjacentToEnergyCell = snake.headAdjacentToEnergyCell;
         this.snakeMessage.reset();
     }
 
@@ -222,6 +224,7 @@ class Snake {
         const newBody = this.body.map(segment => new SnakeSegment(new Coordinate(segment.coordinate.x, segment.coordinate.y)));
         const copy = new Snake(this.id, this.allegiance, newBody, true, this.simulatedFrame, this.moveChosen);
         copy.currentDirection = this.currentDirection;
+        copy.headAdjacentToEnergyCell = this.headAdjacentToEnergyCell;
         return copy;
     }
 }
@@ -255,13 +258,24 @@ class Snakes {
                     continue;
                 }
 
-                const framesUntilCoordinateIsVacated = snake.body.length - i;
+                const framesUntilCoordinateIsVacated = snake.body.length - i + (snake.headAdjacentToEnergyCell ? 1 : 0);
                 if (normalizedFutureFrames < framesUntilCoordinateIsVacated) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    public updateHeadAdjacencyToEnergy(cells: Cells): void {
+        for (const snake of this.collection) {
+            const head = snake.head;
+            snake.headAdjacentToEnergyCell =
+                cells.isEnergyCellAt(head.getCoordinateInDirection(directionEnum.up)) ||
+                cells.isEnergyCellAt(head.getCoordinateInDirection(directionEnum.down)) ||
+                cells.isEnergyCellAt(head.getCoordinateInDirection(directionEnum.left)) ||
+                cells.isEnergyCellAt(head.getCoordinateInDirection(directionEnum.right));
+        }
     }
 
     public registerAllegiance(snakeId: number, allegiance: Allegiance): void {
@@ -813,6 +827,7 @@ class InputParser {
             snakeIdsSeenThisTurn.push(snakeBotId);
         }
         state.snakes.removeMissingById(snakeIdsSeenThisTurn);
+        state.snakes.updateHeadAdjacencyToEnergy(state.cells);
         return state.snakes.mine();
     }
 }
