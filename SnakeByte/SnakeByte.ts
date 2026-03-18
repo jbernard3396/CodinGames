@@ -1,5 +1,21 @@
 // noinspection DuplicatedCode
 
+/**
+ * Future Goals
+ * Big
+ *  1. Optimize flood fill
+ *  2. Coordinate Bots
+ *  3. flood fill should prune off of best, not just size?
+ *
+ * Small
+ *  2. don't run into tails if the snake head is adjacent to an energy cell
+ *
+ *
+ */
+//Flood Fill Measurement
+//1. just added timer - 1128.57 states measured per turn
+//2. switch to 1d lookups for great speed - 3960.41 states measured per turn
+
 declare function readline(): string;
 
 /**
@@ -281,39 +297,95 @@ class Cell {
 
 class Cells {
     public collection: Cell[] = [];
+    private width: number = 0;
+    private height: number = 0;
+    private energyCellIndexes: Set<number> = new Set<number>();
 
-    public clearPowerCells() {
-        this.collection.forEach((cell) => {
-            if (cell.cellObject == CellObject.energyCell) {
-                cell.cellObject = CellObject.empty;
+    public initialize(width: number, height: number): void {
+        this.width = width;
+        this.height = height;
+        this.collection = new Array<Cell>(width * height);
+        this.energyCellIndexes.clear();
+
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                this.collection[this.getIndex(x, y)] = new Cell(new Coordinate(x, y), CellObject.empty);
             }
+        }
+    }
+
+    private getIndex(x: number, y: number): number {
+        return y * this.width + x;
+    }
+
+    public getIndexByCoordinate(coordinate: Coordinate): number {
+        if (
+            coordinate.x < 0 ||
+            coordinate.y < 0 ||
+            coordinate.x >= this.width ||
+            coordinate.y >= this.height
+        ) {
+            return -1;
+        }
+
+        return this.getIndex(coordinate.x, coordinate.y);
+    }
+
+    public setCellObjectByCoordinate(coordinate: Coordinate, cellObject: CellObject): void {
+        const index = this.getIndexByCoordinate(coordinate);
+        if (index < 0) {
+            return;
+        }
+
+        this.setCellObjectByIndex(index, cellObject);
+    }
+
+    public setCellObjectByIndex(index: number, cellObject: CellObject): void {
+        const cell = this.collection[index];
+        if (cell.cellObject === CellObject.energyCell && cellObject !== CellObject.energyCell) {
+            this.energyCellIndexes.delete(index);
+        }
+        if (cellObject === CellObject.energyCell) {
+            this.energyCellIndexes.add(index);
+        }
+        cell.cellObject = cellObject;
+    }
+
+    public clearPowerCells(): void {
+        this.energyCellIndexes.forEach((index) => {
+            this.collection[index].cellObject = CellObject.empty;
         });
+        this.energyCellIndexes.clear();
     }
 
-    public getMaybeByCoordinate(coordinate:Coordinate) {
-        return this.collection.find((c) => c.coordinate.equals(coordinate));
+    public getMaybeByCoordinate(coordinate:Coordinate): Cell | null {
+        const index = this.getIndexByCoordinate(coordinate);
+        if (index < 0) {
+            return null;
+        }
+        return this.collection[index];
     }
 
-    public getByCoordinate(coordinate:Coordinate) {
+    public getByCoordinate(coordinate:Coordinate): Cell {
         const existingCell = this.getMaybeByCoordinate(coordinate);
         if (existingCell) {
             return existingCell;
         }
 
-        const offGridCell = new Cell(
-            new Coordinate(coordinate.x, coordinate.y),
-            CellObject.offGrid
-        );
-        this.collection.push(offGridCell);
-        return offGridCell;
+        return new Cell(new Coordinate(coordinate.x, coordinate.y), CellObject.offGrid);
     }
 
-    public markPowerCell(coordinate:Coordinate) {
-        this.getByCoordinate(coordinate).cellObject = CellObject.energyCell;
+    public markPowerCell(coordinate:Coordinate): void {
+        this.setCellObjectByCoordinate(coordinate, CellObject.energyCell);
+    }
+
+    public isEnergyCellAt(coordinate: Coordinate): boolean {
+        const index = this.getIndexByCoordinate(coordinate);
+        return index >= 0 && this.energyCellIndexes.has(index);
     }
 
     public powerCells(): Cell[] {
-        return this.collection.filter((cell) => cell.cellObject == CellObject.energyCell);
+        return Array.from(this.energyCellIndexes, (index) => this.collection[index]);
     }
 }
 
@@ -577,8 +649,7 @@ class Simulator {
             newBody.push(new SnakeSegment(snake.body[i].coordinate));
         }
 
-        const energyCellEaten = state.cells.powerCells().find(cell => cell.coordinate.equals(newHeadCoordinate));
-        if (energyCellEaten) {
+        if (state.cells.isEnergyCellAt(newHeadCoordinate)) {
             newBody.push(new SnakeSegment(snake.body[snake.body.length - 1].coordinate));
         }
 
@@ -674,12 +745,13 @@ class InputParser {
         state.myId = parseInt(readline());
         state.width = parseInt(readline());
         state.height = parseInt(readline());
+        state.cells.initialize(state.width, state.height);
 
         for (let y = 0; y < state.height; y++) {
             const row: string = readline();
             for (let x = 0; x < state.width; x++) {
                 const cellObject = this.parseCellObject(row[x]);
-                state.cells.collection.push(new Cell(new Coordinate(x, y), cellObject));
+                state.cells.setCellObjectByIndex(y * state.width + x, cellObject);
             }
         }
 
