@@ -8,7 +8,7 @@
  *  3. flood fill should prune off of best, not just size?
  *
  * Small
- *  2. don't run into tails if the snake head is adjacent to an energy cell
+ *  1. there is a bug where snakes just charge off the top of the screen? I think this is caused by the energy cell lookup having overflow?
  *
  *
  */
@@ -65,7 +65,7 @@ enum FloodFillExitReason {
 
 const DIRECTION_LABELS: string[] = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
 const theoretical_time_limit = 50
-const additional_time_that_I_cannot_explain = 10
+const additional_time_that_I_cannot_explain = 0
 const TURN_TIME_LIMIT_MS = theoretical_time_limit + additional_time_that_I_cannot_explain;
 const MS_RESERVED_FOR_BUFFER = 10;
 
@@ -85,7 +85,7 @@ class Coordinate {
     public y: number;
     // noinspection JSUnusedGlobalSymbols
     public print(){
-        return `${this.x} ${this.y}`
+        return `(${this.x} ${this.y})`
     }
     public equals(other:Coordinate) {
         return this.x == other.x && this.y == other.y;
@@ -186,7 +186,8 @@ class Snake {
         body: SnakeSegment[],
         isCopy: boolean = false,
         simulatedFrame: number = 0,
-        moveChosen: boolean = false
+        moveChosen: boolean = false,
+        theoreticallyConsumedEnergyCells: Set<Coordinate> = new Set<Coordinate>()
     ) {
         this.id = id;
         this.allegiance = allegiance;
@@ -195,6 +196,7 @@ class Snake {
         this.simulatedFrame = simulatedFrame;
         this.moveChosen = moveChosen;
         this.snakeMessage.snakeId = id;
+        this.theoreticallyConsumedEnergyCells = theoreticallyConsumedEnergyCells;
     }
     public id: number;
     public allegiance: Allegiance;
@@ -205,6 +207,7 @@ class Snake {
     public headAdjacentToEnergyCell: boolean = false;
     public snakeMessage: SnakeMessage = new SnakeMessage();
     public currentDirection: directionEnum = directionEnum.up;
+    public theoreticallyConsumedEnergyCells: Set<Coordinate> = new Set();
     public get head(): Coordinate {
         return this.body[0].coordinate;
     }
@@ -222,7 +225,7 @@ class Snake {
 
     public deepCopy(): Snake {
         const newBody = this.body.map(segment => new SnakeSegment(new Coordinate(segment.coordinate.x, segment.coordinate.y)));
-        const copy = new Snake(this.id, this.allegiance, newBody, true, this.simulatedFrame, this.moveChosen);
+        const copy = new Snake(this.id, this.allegiance, newBody, true, this.simulatedFrame, this.moveChosen, this.theoreticallyConsumedEnergyCells);
         copy.currentDirection = this.currentDirection;
         copy.headAdjacentToEnergyCell = this.headAdjacentToEnergyCell;
         return copy;
@@ -398,6 +401,10 @@ class Cells {
         return index >= 0 && this.energyCellIndexes.has(index);
     }
 
+    public isEnergyCellTheoreticallyAt(coordinate: Coordinate, state: GameState, snake: Snake): boolean {
+        return !state.energyCellsTheoreticallyConsumedInFutureTurns.has(coordinate) && !snake.theoreticallyConsumedEnergyCells.has(coordinate) && this.isEnergyCellAt(coordinate);
+    }
+
     public powerCells(): Cell[] {
         return Array.from(this.energyCellIndexes, (index) => this.collection[index]);
     }
@@ -415,6 +422,7 @@ class GameState {
     public cells: Cells = new Cells();
     public snakes: Snakes = new Snakes();
     public snakeBotsPerPlayer: number = 0;
+    public energyCellsTheoreticallyConsumedInFutureTurns: Set<Coordinate> = new Set<Coordinate>();
 }
 
 class TurnTimer {
@@ -510,6 +518,7 @@ class Simulator {
         const queue: FloodNode[] = [{ snake, firstMove: null }];
         const visited = new Set<string>();
         let bestMove: directionEnum | null = null;
+        let bestFinalSnake = null;
         let bestLength = -1;
         let bestDistance = Number.MAX_SAFE_INTEGER;
 
@@ -523,6 +532,7 @@ class Simulator {
                 bestLength = length;
                 bestDistance = distanceToClosestEnergy;
                 bestMove = firstMove;
+                bestFinalSnake = candidateSnake;
             }
         };
 
@@ -580,6 +590,8 @@ class Simulator {
         snake.snakeMessage.floodFillStatesVisited = visited.size;
         snake.snakeMessage.floodFillBestMove = bestMove;
         snake.snakeMessage.floodFillExitReason = floodFillExitReason;
+        gameManager.state.energyCellsTheoreticallyConsumedInFutureTurns = new Set<Coordinate>([...bestFinalSnake?.theoreticallyConsumedEnergyCells??new Set<Coordinate>(), ...gameManager.state.energyCellsTheoreticallyConsumedInFutureTurns??new Set<Coordinate>()]);
+        //tempDebug([...gameManager.state.energyCellsTheoreticallyConsumedInFutureTurns].map(c=>c.print()).reduce((a,b)=>a+" "+b,""));
 
         return bestMove;
     }
@@ -682,11 +694,12 @@ class Simulator {
             newBody.push(new SnakeSegment(snake.body[i].coordinate));
         }
 
-        if (state.cells.isEnergyCellAt(newHeadCoordinate)) {
+        if (state.cells.isEnergyCellTheoreticallyAt(newHeadCoordinate, state, snake)) {
+            snake.theoreticallyConsumedEnergyCells.add(newHeadCoordinate);
             newBody.push(new SnakeSegment(snake.body[snake.body.length - 1].coordinate));
         }
 
-        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame);
+        return new Snake(snake.id, snake.allegiance, newBody, true, snake.simulatedFrame, snake.moveChosen, snake.theoreticallyConsumedEnergyCells);
     }
 }
 
@@ -870,6 +883,15 @@ class GameSummary {
 
 /**
  * ============================================================================
+ * Validation
+ * ============================================================================
+ */
+// function validateConsumedEnergyCells(state: GameState): void {
+//     //check that no two snakes
+// }
+
+/**
+ * ============================================================================
  * Application
  * ============================================================================
  */
@@ -890,6 +912,7 @@ class TurnEngine {
         // noinspection InfiniteLoopJS
         while (true) {
             const mySnakes = this.inputParser.parseTurn(this.state);
+            this.state.energyCellsTheoreticallyConsumedInFutureTurns = new Set<Coordinate>();
             this.turnTimer.startTurn();
             const commandString = this.buildCommandString(mySnakes);
             console.log(commandString);
@@ -928,10 +951,10 @@ class TurnEngine {
             }
 
             commandString += `${snake.id} ${DIRECTION_LABELS[chosenDirection]};`;
-            tempDebug(snake.snakeMessage.getMessage());
+            //tempDebug(snake.snakeMessage.getMessage());
         });
         this.gameSummary.recordTurn(mySnakes);
-        tempDebug(this.gameSummary.getMessage());
+        //tempDebug(this.gameSummary.getMessage());
 
         return commandString;
     }
